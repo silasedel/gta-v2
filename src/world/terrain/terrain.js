@@ -498,6 +498,8 @@ float tNoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
       Wt = new Uint8Array(W * (nz + 3)),
       Rl = new Uint8Array(W * (nz + 3)),
       Sd = GROUND2 ? new Float32Array(W * (nz + 3)) : null;
+    // stream hitches (Nov 19): yield on elapsed time too (8 rows of a mid-LOD chunk took ~150 ms in one step)
+    let tY = performance.now();
     for (let j = -1; j <= nz + 1; j++) {
       for (let i = -1; i <= nx + 1; i++) {
         const x = x0 + i * cell,
@@ -526,7 +528,10 @@ float tNoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
           if (!w && claimAt(x, z)) Lr[k] = LI.shell;
         }
       } // r2-ground: around set-piece yards (Nico's lot) the terrain is the same pale crushed shell as the yard sheet, so its sunk edge has no seam
-      if ((j & 7) === 7) yield;
+      if ((j & 7) === 7 || performance.now() - tY > 4) {
+        yield;
+        tY = performance.now();
+      }
     }
     const at = (i, j) => (j + 1) * W + i + 1;
     const P = [],
@@ -585,7 +590,10 @@ float tNoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
           tri(b, d, c);
         }
       }
-      if ((j & 15) === 15) yield;
+      if ((j & 15) === 15 || performance.now() - tY > 4) {
+        yield;
+        tY = performance.now();
+      }
     }
     const nColl = P.length;
     if (o.skirt) {

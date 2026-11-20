@@ -2619,7 +2619,12 @@ export function createTileBuilder(ctx) {
           -y0 / (GF - y0),
           openings,
         );
-      if (sf && B.shopGlass) for (const f of sf) glassFront(B, outer, f, y0, GF, color, opts.props);
+      // collider builds pass null batches: no shop-front dressing to compute there
+      if (sf && B.shopGlass && B.shopGlass !== NULL_BATCH)
+        for (const f of sf) {
+          if (frontQueue) frontQueue.push([B, outer, f, y0, GF, color, opts.props, null]);
+          else glassFront(B, outer, f, y0, GF, color, opts.props);
+        }
       if (FB) facadeWalls(FB, outer, GF, h, FS, 20);
       else wallStrip(B[fstyle], outer, GF, h, tw, th, color, uOff, vOff - GF / th);
       if (sf) fillPolyDown(B.trim, b.rings, GF - 0.02, new THREE.Color(0xe6e2da));
@@ -7919,8 +7924,49 @@ export function createTileBuilder(ctx) {
   // transparent shopfront: kick plate, glass panes + transom, header band; door opening left clear
   // shop-front dressing: striped canvas awning (livery per shop), granite planters with clipped topiary by the door
   const AWN = [0x8c2f2a, 0x2f5a52, 0x283a52, 0x6b4a2a, 0x7a2f45, 0x2e5f6e, 0x3f4a2a];
+  let lodDressing = false; // true while lodBuildings builds a mid / far chunk
+  // stream hitches (Nov 19): a building with many shop fronts took up to ~470 ms in one streaming step (3D awnings).
+  // While a streaming generator builds a building, its shop fronts are queued here and then built one by one with
+  // time-based yields (drainFronts). Same geometry in the same batches; only the vertex order differs.
+  let frontQueue = null;
+  // builds one building, then its queued shop fronts in time slices; `lift` is the batches' relief lift ({ k })
+  // (lodDressing is set only around synchronous calls: other tile builds run between the yields)
+  function* buildBuildingSliced(B, b, opts, lift, q, lod) {
+    q.length = 0;
+    const k = lift ? lift.k : null;
+    frontQueue = q;
+    lodDressing = lod;
+    try {
+      buildBuilding(B, b, opts);
+    } finally {
+      frontQueue = null;
+      lodDressing = false;
+    }
+    if (!q.length) return;
+    let tY = performance.now();
+    for (let i = 0; i < q.length; i++) {
+      if (performance.now() - tY > 4) {
+        yield;
+        tY = performance.now();
+      }
+      const e = q[i];
+      if (lift) lift.k = k;
+      lodDressing = lod;
+      try {
+        glassFront(e[0], e[1], e[2], e[3], e[4], e[5], e[6]);
+      } catch (err) {
+        console.warn('[city-look] shop front failed', err);
+      } finally {
+        lodDressing = false;
+      }
+    }
+    q.length = 0;
+  }
   function shopFrontDress(B, p, tx, tz, nx, nz, s0, s1, y0, top, GF, fx, fz, props, lot = false) {
     const hA = hash(((fx * 11) | 0) * 31 + ((fz * 17) | 0) * 7 + 3);
+    // stream hitches (Nov 19): mid / far LOD chunks (350 m and more away) get the flat awning; the scalloped 3D one cost up
+    // to ~400 ms in one streaming step for a building with many shop fronts, for detail too small to see there
+    const A3 = AWN3D && !lodDressing;
     let drew = false;
     const P = (sv, o, y) => [p[0] + tx * sv + nx * o, y, p[1] + tz * sv + nz * o];
     const AW = isFB(B) ? awningView(B.fac) : B.trim; // canvas flagged for the facade shader's night bounce
@@ -7944,11 +7990,11 @@ export function createTileBuilder(ctx) {
     if (hA < 0.85 && s1 - s0 > 1.5) {
       const cA = new THREE.Color(AWN[((hA * 1.17 * AWN.length) | 0) % AWN.length]);
       const cB = hA < 0.5 ? new THREE.Color(0xe9e3d3) : cA.clone().multiplyScalar(0.72);
-      const yT = Math.min(GF - 0.15, top + (lot && AWN3D ? 0.12 : 0.5)),
-        yB = Math.max(top - (lot && AWN3D ? 0.48 : 0.35), y0 + 2.35),
+      const yT = Math.min(GF - 0.15, top + (lot && A3 ? 0.12 : 0.5)),
+        yB = Math.max(top - (lot && A3 ? 0.48 : 0.35), y0 + 2.35),
         dep = 1.3 + hA * 0.4; // shops pass: on shop lots the awning hangs right over the glass, the sign band above stays readable
       const n = Math.max(2, Math.round((s1 - s0 + 0.4) / 0.45));
-      if (AWN3D) {
+      if (A3) {
         // shops pass: 3D canvas: sags between the frame ribs, one scallop per stripe on the valance (both sides drawn)
         const S0 = s0 - 0.2,
           SL = s1 - s0 + 0.4,
@@ -8027,7 +8073,7 @@ export function createTileBuilder(ctx) {
         // side cheeks
         const A = P(sv, 0.03, yT),
           Bq = P(sv, dep, yB),
-          C = P(sv, dep, yB - (AWN3D ? 0.2 : 0.3));
+          C = P(sv, dep, yB - (A3 ? 0.2 : 0.3));
         for (const q of [A, Bq, C, A, C, Bq]) AW.vert(q[0], q[1], q[2], tx, 0, tz, 0, 0, cA);
       }
       drew = true;
@@ -12657,6 +12703,7 @@ export function createTileBuilder(ctx) {
     yield;
     yield* buildRoads(B, tile, props, null);
     yield;
+    const FQ = [];
     let k = 0,
       tY = performance.now();
     // r2-perf: yield on elapsed time (4 ms), not every 25 buildings: 25 downtown buildings with shop-front dressing took
@@ -12664,7 +12711,7 @@ export function createTileBuilder(ctx) {
     for (const b of buildingsOf(tile)) {
       if (houseLots.claims(b)) continue;
       /* drawn by the house generator (setpieces/houses) */ if (LF.on) LF.k = baseOf(b);
-      buildBuilding(B, b, { shops: true, props });
+      yield* buildBuildingSliced(B, b, { shops: true, props }, LF, FQ, false);
       if (b.style === 'stilt') stiltPiles(B, b);
       if (TB_YIELD ? performance.now() - tY > 4 : ++k % 25 === 0) {
         yield;
@@ -13236,6 +13283,7 @@ export function createTileBuilder(ctx) {
     return { fb, B };
   }
   function* lodBuildings(LB, tile, far) {
+    const FQ = [];
     let k = 0,
       tY = performance.now();
     for (const bd of buildingsOf(tile, false)) {
@@ -13243,7 +13291,7 @@ export function createTileBuilder(ctx) {
       if (!bd.rings || !bd.rings[0] || bd.rings[0].length < 3) continue;
       if (LB.lift.on) LB.lift.k = baseOf(bd);
       try {
-        buildBuilding(LB.B, bd, { shops: false, lod: far ? 2 : 1 });
+        yield* buildBuildingSliced(LB.B, bd, { shops: false, lod: far ? 2 : 1 }, LB.lift, FQ, true);
       } catch (e) {
         if (!LB.warned) {
           LB.warned = true;
@@ -13739,12 +13787,15 @@ export function createTileBuilder(ctx) {
   function* buildColliders(t) {
     const handles = [];
     t._colPartial = handles;
-    colTileReg.set(
+    const regKey =
       Math.floor((t.cx ?? (t.tx + 0.5) * provider.tileSize) / provider.tileSize) +
-        ',' +
-        Math.floor((t.cz ?? (t.tz + 0.5) * provider.tileSize) / provider.tileSize),
-      t,
-    ); // lets the streamer release partially built colliders if the job is cancelled
+      ',' +
+      Math.floor((t.cz ?? (t.tz + 0.5) * provider.tileSize) / provider.tileSize);
+    colTileReg.set(regKey, t); // lets the streamer release partially built colliders if the job is cancelled
+    // memory leak (Nov 19): the registry kept every tile ever given colliders (with all its prop lists) for good;
+    // removeColliders now drops the entry with the tile's colliders
+    handles.regKey = regKey;
+    handles.regTile = t;
     const tile = yield* getTileG(t.tx, t.tz);
     if (!tile) {
       t._colPartial = null;
@@ -13933,7 +13984,8 @@ export function createTileBuilder(ctx) {
     flush();
     yield;
     let bb = new Batch(),
-      k = 0;
+      k = 0,
+      tB = performance.now();
     for (const b of buildingsOf(tile)) {
       if (houseLots.claims(b)) continue; // r2-physics (QA-045): building parts are solid too (tall parts above a low outline were walk-through, roofs 11 m above their collider) // claimed houses bring their own colliders (setpieces/houses)
       buildBuilding(NULLB, b, { coll: bb, shops: false, relief: LFc });
@@ -13941,10 +13993,12 @@ export function createTileBuilder(ctx) {
         add(bb, audit ? soupOf('building') : solid, baseOf(b));
         bb = new Batch();
       }
-      if (++k % 40 === 0) {
+      // stream hitches (Nov 19): also yield on elapsed time (40 big downtown buildings were one 100-200 ms step)
+      if (++k % 40 === 0 || performance.now() - tB > 4) {
         add(bb, audit ? soupOf('building') : solid);
         bb = new Batch();
         yield;
+        tB = performance.now();
       }
     }
     LIBM.fenceCollide(bb, tile, LFc);
@@ -14709,6 +14763,10 @@ export function createTileBuilder(ctx) {
     return best;
   }
   function removeColliders(handles) {
+    if (handles.regKey !== undefined && colTileReg.get(handles.regKey) === handles.regTile) {
+      colTileReg.delete(handles.regKey);
+    }
+    handles.regTile = null;
     if (handles.dynOwner) {
       dynProps.removeOwner(handles.dynOwner);
       handles.dynOwner = null;
