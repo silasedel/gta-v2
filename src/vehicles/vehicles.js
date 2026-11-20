@@ -3093,6 +3093,7 @@ export async function createVehicles(game) {
       }
       v.vc = null;
     }
+    restWheels(v);
     try {
       v.body.setEnabled(true);
     } catch (e) {
@@ -3106,7 +3107,6 @@ export async function createVehicles(game) {
     v.ghost = true;
     v.frozen = false;
     v.ghostSpeed = Math.max(0, v.speed || 8);
-    restWheels(v);
     v.hitCd = 0.6;
     v.ai.next = null;
     v.ai.deadEnd = false;
@@ -3224,6 +3224,13 @@ export async function createVehicles(game) {
     ai.stuckT = 0;
   }
   // freeze: controller removed (its wheels cache ground-collider handles), body disabled
+  // Nov 19 (user: "a car was hovering because its wheels were inside it"): without a controller (ghost and frozen cars)
+  // nothing moves the drawn wheels, so they kept their last pose (often the body origin, see the wheel loop) and the
+  // far LOD baked that pose. Put them at the static ride height instead: the tires stand on the ground under the body.
+  function restWheels(v) {
+    const rest = v.groundOff - v.spec.r;
+    for (const w of v.car?.wheels || []) w.steer.position.set(w.x, -rest, w.z);
+  }
   function freeze(v) {
     if (v.frozen) return;
     v.frozen = true;
@@ -3235,15 +3242,9 @@ export async function createVehicles(game) {
       }
       v.vc = null;
     }
+    restWheels(v);
     try {
       v.body.setEnabled(false);
-  // Nov 19 (user: "a car was hovering because its wheels were inside it"): without a controller (ghost and frozen cars)
-  // nothing moves the drawn wheels, so they kept their last pose (often the body origin, see the wheel loop) and the
-  // far LOD baked that pose. Put them at the static ride height instead: the tires stand on the ground under the body.
-  function restWheels(v) {
-    const rest = v.groundOff - v.spec.r;
-    for (const w of v.car?.wheels || []) w.steer.position.set(w.x, -rest, w.z);
-  }
     } catch (e) {
       /* old rapier */
     }
@@ -3255,7 +3256,6 @@ export async function createVehicles(game) {
       new RAPIER.Ray({ x, y: y + 2.5, z }, { x: 0, y: -1, z: 0 }),
       7,
       true,
-    restWheels(v);
       QF.EXCLUDE_DYNAMIC | QF.EXCLUDE_KINEMATIC | QF.EXCLUDE_SENSORS,
     );
     return !!gh;
