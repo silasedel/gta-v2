@@ -89,7 +89,15 @@ export function createCutscenes(game) {
       return { x: w[0], y: cs.frame ? w[1] : (at[1] ?? groundY(w[0], w[2])), z: w[2], heading };
     }
     if (at.isVector3) return { x: at.x, y: at.y, z: at.z, heading: 0 };
-    return { x: at.x, y: at.y ?? groundY(at.x, at.z), z: at.z, heading: at.heading || 0 };
+    // fixedY: the spot gave its own height (a floor above the terrain: an interior set, a deck), keep it when teleporting
+    const fixedY = Number.isFinite(at.y);
+    return {
+      x: at.x,
+      y: fixedY ? at.y : groundY(at.x, at.z),
+      z: at.z,
+      heading: at.heading || 0,
+      fixedY,
+    };
   }
 
   // a look / camera point: array, {x,y,z}, or 'actor:name' / 'vehicle:name' / 'player'
@@ -272,7 +280,7 @@ export function createCutscenes(game) {
     if (def.player?.at) {
       const p = resolveAt(cs, def.player.at);
       try {
-        game.teleport(p.x, null, p.z, p.heading);
+        game.teleport(p.x, p.fixedY ? p.y : null, p.z, p.heading);
       } catch (e) {
         /* */
       }
@@ -425,7 +433,7 @@ export function createCutscenes(game) {
     if (end.player?.at) {
       const p = resolveAt(cs, end.player.at);
       try {
-        game.teleport(p.x, null, p.z, p.heading);
+        game.teleport(p.x, p.fixedY ? p.y : null, p.z, p.heading);
       } catch (e) {
         /* */
       }

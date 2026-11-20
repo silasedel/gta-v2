@@ -1216,10 +1216,12 @@ async function boot() {
       L.camKmh += (kmh - L.camKmh) * (1 - Math.exp(-dt * 2));
       // user: a little closer to the car (was 5.7 for every car); scales with car length
       wantDist =
-        2.6 + 0.5 * (st.vehicle.spec?.L || 4.6) + Math.min((SMOOTHCAM ? L.camKmh : kmh) / 80, 1.6);
+        2.6 + 0.5 * (st.vehicle.spec?.L || 4.6) + Math.min((smoothCam ? L.camKmh : kmh) / 80, 1.6);
       // auto-follow behind car
       if (game.clock.elapsed - lastMouseTime > 1.2 && kmh > 8) {
         const want = P.heading + Math.PI;
+    // game.smoothCam (runtime A/B for the jitter probe) overrides the ?smoothcam URL flag
+    const smoothCam = game.smoothCam ?? SMOOTHCAM;
         let d = want - game.cameraYaw;
         d = Math.atan2(Math.sin(d), Math.cos(d));
         game.cameraYaw += d * Math.min(1, dt * 2.5);
@@ -1352,7 +1354,7 @@ async function boot() {
     // cars too (parked and moving, not the one being driven): a car between the camera and Nico pulls the camera in
     // like GTA instead of filling half the screen with its hood; it eases back out below (colDist)
     // Nov 19 (smooth chase camera): not while driving; passing traffic pulled the camera in and out
-    if (!(driving && SMOOTHCAM))
+    if (!(driving && smoothCam))
       try {
         camVeh.clear();
         const reach = (camDist + 6) * (camDist + 6);
@@ -1389,7 +1391,7 @@ async function boot() {
     // render geometry without colliders (roof overhangs, eaves, porch roofs of set pieces): the camera must not
     // sit inside them (playtest P2). Groups in game.cameraOccluders plus the known set pieces, tested only when near.
     // Not while driving (smooth chase camera, Nov 19): only real walls move the driving camera.
-    if (!(driving && SMOOTHCAM))
+    if (!(driving && smoothCam))
       try {
         const occ = camOccluders();
         if (occ.length) {
@@ -1437,7 +1439,7 @@ async function boot() {
     const wantD = hit ? Math.max(0.6, hit.timeOfImpact - 0.3) : camDist;
     L.camClearT = hit ? 0 : (L.camClearT || 0) + dt;
     game.__camDbg = { camDist, wantD, colDist, hit: !!hit }; // r2-physics: camera pumping check (tools/v2/physics/camcheck.mjs)
-    if (driving && SMOOTHCAM) {
+    if (driving && smoothCam) {
       // Nov 19 (smooth chase camera): no snaps while driving. The distance eases in quickly when a wall really blocks the
       // view and back out slowly once the path has stayed clear for 0.4 s, both frame-rate independent.
       if (wantD < colDist) colDist += (wantD - colDist) * (1 - Math.exp(-dt * 8));
@@ -1501,7 +1503,7 @@ async function boot() {
     // interpolated car. It used to lerp toward that point in world space: the lag behind a moving car then changed with
     // every frame time (about 10 cm between 16 and 33 ms frames at 50 km/h) and any collision hit snapped it forward by
     // the whole lag (~1 m), the "closer and farther" pumping. Yaw, pitch and distance are already smoothed above.
-    if (driving && !SMOOTHCAM) {
+    if (driving && !smoothCam) {
       camPos.lerp(target, 1 - Math.exp(-dt * 12));
       if (hit) camPos.copy(target);
     } else camPos.copy(target);
