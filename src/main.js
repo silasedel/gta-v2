@@ -149,6 +149,8 @@ async function safe(name, fn, fallback) {
   }
 }
 
+// Nov 19 (user: the chase camera pumps closer / farther): smooth driving camera; ?smoothcam=0 = old
+const SMOOTHCAM = !(typeof location !== 'undefined' && /[?&]smoothcam=0\b/.test(location.search));
 const FIXSTEP = !(typeof location !== 'undefined' && /[?&]fixstep=0\b/.test(location.search)); // Nov 19: fixed-step physics + interpolated player car while driving
 const PHYS_CAP = !(typeof location !== 'undefined' && /[?&]physcap=0\b/.test(location.search)); // r2-perf: physics sub-step cap, on (A/B: ?physcap=0 or game.physCap = false; spawn step 14.6 -> 9.0 ms, frame 99.9 -> 89.5 ms in-session)
 
@@ -1208,7 +1210,13 @@ async function boot() {
       const t = st.vehicle.mesh.position;
       pivot = tmp.set(t.x, t.y + 1.6, t.z);
       const kmh = st.vehicle.speedKmh || 0;
-      wantDist = 2.6 + 0.5 * (st.vehicle.spec?.L || 4.6) + Math.min(kmh / 80, 1.6); // user: a little closer to the car (was 5.7 for every car); scales with car length
+      // Nov 19 (user: the chase camera "glitches closer and farther really quickly"): the speed term follows a smoothed
+      // speed; the raw wheel speed changes from physics step to physics step
+      if (!camDriving) L.camKmh = kmh;
+      L.camKmh += (kmh - L.camKmh) * (1 - Math.exp(-dt * 2));
+      // user: a little closer to the car (was 5.7 for every car); scales with car length
+      wantDist =
+        2.6 + 0.5 * (st.vehicle.spec?.L || 4.6) + Math.min((SMOOTHCAM ? L.camKmh : kmh) / 80, 1.6);
       // auto-follow behind car
       if (game.clock.elapsed - lastMouseTime > 1.2 && kmh > 8) {
         const want = P.heading + Math.PI;
@@ -1343,60 +1351,64 @@ async function boot() {
     }
     // cars too (parked and moving, not the one being driven): a car between the camera and Nico pulls the camera in
     // like GTA instead of filling half the screen with its hood; it eases back out below (colDist)
-    try {
-      camVeh.clear();
-      const reach = (camDist + 6) * (camDist + 6);
-      for (const v of game.vehicles?.list || []) {
-        if (!v?.body || v === st.vehicle || v.disposed) continue;
-        const t = v.body.translation();
-        if ((t.x - piv.x) ** 2 + (t.z - piv.z) ** 2 < reach) camVeh.add(v.body.handle);
+    // Nov 19 (smooth chase camera): not while driving; passing traffic pulled the camera in and out
+    if (!(driving && SMOOTHCAM))
+      try {
+        camVeh.clear();
+        const reach = (camDist + 6) * (camDist + 6);
+        for (const v of game.vehicles?.list || []) {
+          if (!v?.body || v === st.vehicle || v.disposed) continue;
+          const t = v.body.translation();
+          if ((t.x - piv.x) ** 2 + (t.z - piv.z) ** 2 < reach) camVeh.add(v.body.handle);
+        }
+        if (camVeh.size) {
+          const sv = world.castShape(
+            piv,
+            IDQ,
+            raydir,
+            camSphere,
+            0,
+            camDist + 0.3,
+            false,
+            RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
+            undefined,
+            pCol,
+            undefined,
+            camVehPred,
+          );
+          if (
+            sv &&
+            Number.isFinite(sv.time_of_impact) &&
+            (!hit || sv.time_of_impact < hit.timeOfImpact)
+          )
+            hit = { timeOfImpact: sv.time_of_impact };
+        }
+      } catch (e) {
+        /* static result stands */
       }
-      if (camVeh.size) {
-        const sv = world.castShape(
-          piv,
-          IDQ,
-          raydir,
-          camSphere,
-          0,
-          camDist + 0.3,
-          false,
-          RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
-          undefined,
-          pCol,
-          undefined,
-          camVehPred,
-        );
-        if (
-          sv &&
-          Number.isFinite(sv.time_of_impact) &&
-          (!hit || sv.time_of_impact < hit.timeOfImpact)
-        )
-          hit = { timeOfImpact: sv.time_of_impact };
-      }
-    } catch (e) {
-      /* static result stands */
-    }
     // render geometry without colliders (roof overhangs, eaves, porch roofs of set pieces): the camera must not
     // sit inside them (playtest P2). Groups in game.cameraOccluders plus the known set pieces, tested only when near.
-    try {
-      const occ = camOccluders();
-      if (occ.length) {
-        camRay.set(piv, raydir);
-        camRay.near = 0;
-        camRay.far = camDist + 0.3;
-        for (const g of occ) {
-          const hits = camRay.intersectObject(g, true);
-          for (const h of hits) {
-            if (!h.object.visible || h.object.isSprite || h.object.isPoints || h.object.isLine)
-              continue;
-            if (!hit || h.distance < hit.timeOfImpact) hit = { timeOfImpact: h.distance };
-            break;
+    // Not while driving (smooth chase camera, Nov 19): only real walls move the driving camera.
+    if (!(driving && SMOOTHCAM))
+      try {
+        const occ = camOccluders();
+        if (occ.length) {
+          camRay.set(piv, raydir);
+          camRay.near = 0;
+          camRay.far = camDist + 0.3;
+          for (const g of occ) {
+            const hits = camRay.intersectObject(g, true);
+            for (const h of hits) {
+              if (!h.object.visible || h.object.isSprite || h.object.isPoints || h.object.isLine)
+                continue;
+              if (!hit || h.distance < hit.timeOfImpact) hit = { timeOfImpact: h.distance };
+              break;
+            }
           }
         }
+      } catch (e) {
+        /* occluder test is best effort */
       }
-    } catch (e) {
-      /* occluder test is best effort */
-    }
     // r2-physics (user: "the camera gets closer then farther" while driving): thin things between the car and the camera (poles,
     // posts, sign posts, palm / sapling trunks, hedge cores, bins) no longer pull it in: a static hit only counts when parallel
     // rays 0.55 m to either side are blocked too (a wall, a building, a big trunk, terrain). In / out are smoothed with hysteresis:
@@ -1425,7 +1437,12 @@ async function boot() {
     const wantD = hit ? Math.max(0.6, hit.timeOfImpact - 0.3) : camDist;
     L.camClearT = hit ? 0 : (L.camClearT || 0) + dt;
     game.__camDbg = { camDist, wantD, colDist, hit: !!hit }; // r2-physics: camera pumping check (tools/v2/physics/camcheck.mjs)
-    if (wantD < colDist - 0.12)
+    if (driving && SMOOTHCAM) {
+      // Nov 19 (smooth chase camera): no snaps while driving. The distance eases in quickly when a wall really blocks the
+      // view and back out slowly once the path has stayed clear for 0.4 s, both frame-rate independent.
+      if (wantD < colDist) colDist += (wantD - colDist) * (1 - Math.exp(-dt * 8));
+      else if (L.camClearT > 0.4) colDist += (wantD - colDist) * (1 - Math.exp(-dt * 1.5));
+    } else if (wantD < colDist - 0.12)
       colDist =
         wantD < colDist - 1.2 || !driving
           ? wantD
@@ -1480,7 +1497,11 @@ async function boot() {
       camPos.copy(target);
       camInit = true;
     }
-    if (driving) {
+    // Nov 19 (user: "just have it be a perfect smooth follow"): the driving camera sits exactly on its orbit around the
+    // interpolated car. It used to lerp toward that point in world space: the lag behind a moving car then changed with
+    // every frame time (about 10 cm between 16 and 33 ms frames at 50 km/h) and any collision hit snapped it forward by
+    // the whole lag (~1 m), the "closer and farther" pumping. Yaw, pitch and distance are already smoothed above.
+    if (driving && !SMOOTHCAM) {
       camPos.lerp(target, 1 - Math.exp(-dt * 12));
       if (hit) camPos.copy(target);
     } else camPos.copy(target);
