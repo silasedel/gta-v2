@@ -11,6 +11,8 @@
 // rejected if it overlaps a road, water, a map building that stays, or anything already placed.
 import { buildShop, KINDS, BODY, hex, signAtlas } from './shops.js';
 
+// trunk-following tree colliders (src/vehicles/physics/trunks.js) are on unless ?trunks=0
+const TRUNK_COLLIDERS = !/[?&]trunks=0/.test(globalThis.location?.search || '');
 const RANK = {
   trunk: 5,
   primary: 5,
@@ -949,7 +951,9 @@ export function buildStreetscape(hk, plan, ox, oz, lod = 0) {
           B.box(MET, 0.04, 0.05, 1.3, m(k * 0.22, 0.14, 0), { color: 0x1a1a18 });
         }
       B.box(mat.matte(), 1.2, 0.02, 1.2, m(0, 0.12, 0), { color: 0x3a2a1c });
-      cols.push({ shape: 'cyl', p: [x, y + 1.5, z], r: 0.3, hh: 1.5 });
+      // physics-audit: the palm in the grate is solid along its drawn trunk (src/vehicles/physics/trunks.js);
+      // this upright stand-in stood alone at the curb wherever the planting dropped the palm (an invisible post)
+      if (!TRUNK_COLLIDERS) cols.push({ shape: 'cyl', p: [x, y + 1.5, z], r: 0.3, hh: 1.5 });
     } else if (f.kind === 'bistro') {
       B.cyl(MET, 0.35, 0.35, 0.03, m(0, 0.74, 0), { seg: 14, color: 0xe8e8e4 });
       B.cyl(MET, 0.03, 0.03, 2.3, m(0, 1.15, 0), { seg: 6, color: 0xd8d8d8 });
@@ -1017,11 +1021,13 @@ export function buildStreetscape(hk, plan, ox, oz, lod = 0) {
         );
       }
     cols.push({ shape: 'cyl', p: [x, y + 0.5, z], r: 3.3, hh: 0.5 });
-    for (const t of plan.trees)
-      if (!t.small) {
-        const [tx, tz] = P(t.x, t.z);
-        cols.push({ shape: 'cyl', p: [tx, y + 1.5, tz], r: 0.35, hh: 1.5 });
-      }
+    // physics-audit: drawn trees get trunk colliders from trunks.js; these stand-ins are kept only with ?trunks=0
+    if (!TRUNK_COLLIDERS)
+      for (const t of plan.trees)
+        if (!t.small) {
+          const [tx, tz] = P(t.x, t.z);
+          cols.push({ shape: 'cyl', p: [tx, y + 1.5, tz], r: 0.35, hh: 1.5 });
+        }
   }
   // the quarter's small green: lawn, clipped hedge border with gaps, paths crossing
   if (plan.green) {

@@ -125,12 +125,30 @@ export function installTrunks(game) {
         const cs = game.vegetation?.countryside,
           T = cs?.treesNear?.(pp.x, pp.z, 60) || [];
         if (T.length) {
-          const grid = new Set(
-            list.map((e) => Math.round(e.segs[0][0] * 2) + ':' + Math.round(e.segs[0][2] * 2)),
-          );
+          // physics-audit: a tree that already has its real (model) trunk gets no stand-in. Matched by distance (any
+          // modelled trunk base within 0.8 m), not by rounding both positions to a 0.5 m key: a base 1 cm across a
+          // rounding edge used to add a second, upright stand-in capsule beside the drawn leaning trunk.
+          const near = new Map();
+          for (const e of list) {
+            const ck = Math.floor(e.segs[0][0]) + ':' + Math.floor(e.segs[0][2]);
+            if (!near.has(ck)) near.set(ck, []);
+            near.get(ck).push(e.segs[0]);
+          }
+          const hasTrunkNear = (x, z) => {
+            const cx = Math.floor(x);
+            const cz = Math.floor(z);
+            for (let i = -1; i <= 1; i++) {
+              for (let j = -1; j <= 1; j++) {
+                for (const s of near.get(cx + i + ':' + (cz + j)) || []) {
+                  if ((s[0] - x) ** 2 + (s[2] - z) ** 2 < 0.64) return true;
+                }
+              }
+            }
+            return false;
+          };
           for (const tr of T) {
             const gk = Math.round(tr.x * 2) + ':' + Math.round(tr.z * 2);
-            if (grid.has(gk)) continue;
+            if (hasTrunkNear(tr.x, tr.z)) continue;
             const k = String(tr.kind || ''),
               sc = tr.s || 1;
             const rad =
