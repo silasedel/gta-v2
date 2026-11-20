@@ -316,7 +316,9 @@ export function createCutscenes(game) {
     let phoneOn = false;
     const glyph = game.bindings?.codeGlyph?.('Enter') || 'Enter';
     function tick(dt) {
-      cs.t += dt;
+      // the timeline runs on the same real-time clock as the shots (they sleep in real time), so lines and events stay
+      // on their shots even when frames are slow and the game's dt is clamped
+      cs.t = (performance.now() - cs.t0) / 1000 / slow;
       for (const l of lines) {
         if (l.fired || cs.t < (l.at || 0)) continue;
         l.fired = true;
@@ -357,6 +359,10 @@ export function createCutscenes(game) {
         if (hold >= SKIP_HOLD_S) cs.skipped = true;
       }
     }
+    // game.cutsceneSlow = k (tests): every shot and the whole timeline run k times slower, so a slow machine still films
+    // each shot while it is on screen
+    const slow = Math.max(1, game.cutsceneSlow || 1);
+    cs.t0 = performance.now();
     game.updaters.push(tick);
     const sleep = (sec) =>
       new Promise((r) => {
@@ -371,12 +377,13 @@ export function createCutscenes(game) {
     try {
       if (def.fadeIn !== false) cin.black(false, 700);
       for (let i = 0; i < shots.length && !cs.skipped; i++) {
+        cs.shot = i; // which shot is on screen (tests film by shot, not by the game-time clock)
         const s = shots[i];
         if (i > 0 && s.cut === 'dissolve') cin.crossfade(900);
         const spec = shotSpec(cs, s);
         // the move runs a little past the cut so the camera still travels when the next shot lands
-        cin.shot({ ...spec, dur: spec.dur + 0.4 });
-        await sleep(spec.dur);
+        cin.shot({ ...spec, dur: (spec.dur + 0.4) * slow });
+        await sleep(spec.dur * slow);
       }
       if (!shots.length && def.duration) await sleep(def.duration);
     } catch (e) {
