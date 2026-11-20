@@ -48,12 +48,11 @@ sw.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 // perf (Nov 19): the game allocates ~100 MB/s while streaming the city, and garbage collection took ~45 % of the main
 // thread downtown (CPU profile). A bigger young generation means fewer, cheaper scavenges and fewer objects promoted
 // into the old heap (which then needs slow full collections).
-sw.appendSwitch('js-flags', '--max-semi-space-size=64');
 // Large V8 heap for the renderer (the browser tab caps lower).
 // --ps-js-flags="..." adds V8 flags for measurement runs (A/B of GC settings with the in-game benchmark).
 sw.appendSwitch(
   'js-flags',
-  ['--max-old-space-size=8192', argValue('ps-js-flags') || ''].join(' ').trim(),
+  ['--max-old-space-size=8192', '--max-semi-space-size=64', argValue('ps-js-flags') || ''].join(' ').trim(),
 );
 if (process.platform === 'darwin') {
   // ANGLE on Metal: Chromium's fastest WebGL path on Apple silicon.
