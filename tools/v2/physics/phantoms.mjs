@@ -146,7 +146,8 @@ await withBrowser({ width: 960, height: 540, maxSeconds: 2400 }, async (b) => {
           let best = null;
           for (let x = -7600; x < 3800; x += 120) {
             for (let z = -8700; z < 7600; z += 120) {
-              if (C.isWater(x, z)) continue;
+              if (C.isWater(x, z) || C.isWater(x + 60, z) || C.isWater(x - 60, z) || C.isWater(x, z + 60) || C.isWater(x, z - 60)) continue;
+              if (C.terrain?.real?.(x, z)) continue;
               const s = Math.abs(th(x + 8, z) - th(x - 8, z)) + Math.abs(th(x, z + 8) - th(x, z - 8));
               if (!best || s > best.s) best = { x, z, s };
             }
@@ -197,7 +198,14 @@ await withBrowser({ width: 960, height: 540, maxSeconds: 2400 }, async (b) => {
           const roads = __ph.roads(px, pz, ${ROAD_RAD});
           const open = __ph.open(px, pz, ${ROAD_RAD}, 30);
           const terr = ${doTerrain ? `__ph.terrain(px, pz, 36, 3)` : 'null'};
-          return { at: [+px.toFixed(1), +pz.toFixed(1)], roads, open, terr };
+          // switched-off colliders in the whole world, by creator (tile props wait for their near build)
+          const off = {};
+          game.world.forEachCollider((c) => {
+            if (c.isEnabled()) return;
+            const k = window.__colOwners.get(c.handle) || 'unknown';
+            off[k] = (off[k] || 0) + 1;
+          });
+          return { at: [+px.toFixed(1), +pz.toFixed(1)], roads, open, terr, off };
         })())`,
           600000,
         ),
@@ -225,6 +233,8 @@ const missing = [];
 const roadPhantoms = [];
 const dmc = [];
 const gmc = [];
+const npc = [];
+const lod = [];
 for (const a of report.areas) {
   for (const s of a.stops) {
     roadM += s.roads.roadM;
@@ -239,7 +249,9 @@ for (const a of report.areas) {
     }
     if (s.terr) {
       dmc.push(...s.terr.drawnMinusCol);
-      gmc.push(...s.terr.ghaMinusCol);
+      gmc.push(...(s.terr.ghaMinusDrawn || []));
+      npc.push(...(s.terr.npcMinusDrawn || []));
+      lod.push(...(s.terr.lodDrawnMinusCol || []));
     }
   }
 }
@@ -267,10 +279,24 @@ report.totals = {
   roadPhantomsPerKm: +(roadPhC.length / Math.max(0.001, roadM / 1000)).toFixed(2),
   phantomClusters: phC.length,
   missingClusters: miC.length,
-  phantomByOwner: groupBy(phC, (f) => f.owner + ' [' + f.body + ' ' + f.shape + ']'),
+  phantomByOwner: groupBy(
+    phC,
+    (f) =>
+      f.owner +
+      ' [' +
+      f.body +
+      ' ' +
+      f.shape +
+      (f.tileNear === false ? ', before near build' : '') +
+      ']',
+  ),
   missingByMesh: groupBy(miC, (f) => f.mesh),
   terrainDrawnMinusCollider: quantiles(dmc),
-  groundHeightAtMinusCollider: quantiles(gmc),
+  groundHeightAtMinusDrawn: quantiles(gmc),
+  npcGroundMinusDrawn: quantiles(npc),
+  terrainSinkOver3cm: dmc.filter((d) => d > 0.03).length,
+  terrainFloatOver3cm: dmc.filter((d) => d < -0.03).length,
+  lodOnlyGroundMinusCollider: quantiles(lod),
 };
 report.phantomList = phC.sort((a, b) => b.n - a.n).slice(0, 200);
 report.missingList = miC.sort((a, b) => b.n - a.n).slice(0, 200);

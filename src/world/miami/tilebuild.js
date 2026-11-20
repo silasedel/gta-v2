@@ -55,6 +55,8 @@ import { groundClaims } from '../ground/claims.js';
 const R4SLAB = !(typeof location !== 'undefined' && /[?&]r4slab=0\b/.test(location.search)); // r4-shoreland: no seawall cap on natural inland banks
 const MAPFIX_OFF = typeof location !== 'undefined' && /[?&]mapfix=0\b/.test(location.search); // map audit fixes A/B (tools/v2/map-audit.mjs)
 const GC_OFF = typeof location !== 'undefined' && /[?&]groundfix=0/.test(location.search); // ground-continuity before/after switch (audit only)
+// physics-audit: tile prop colliders wait for the near build that draws the props (?propgate=0 = old behavior)
+const PROP_GATE = !(typeof location !== 'undefined' && /[?&]propgate=0\b/.test(location.search));
 const AUD = { src: '?', on: false }; // road surface audit: source tag of the vertices being written (surfaceTile)
 const ROADFIX = !(typeof location !== 'undefined' && /[?&]roadfix=0\b/.test(location.search)); // roads pass (Nov 19) master switch: ?roadfix=0 = every road-surface fix of this pass off (before shots)
 const CURB3D =
@@ -13194,6 +13196,7 @@ export function createTileBuilder(ctx) {
         };
       })
       .concat(SK ? upoleLampsOf(props.upole) : []);
+    propCollidersOn(t, true);
     root.add(group);
     return group;
   }
@@ -13534,6 +13537,7 @@ export function createTileBuilder(ctx) {
       `chunk-mid-${ca},${cb}`,
     );
     yield* terrainLod(cg, ca, cb, CS, 16);
+    if (cg) midBuilt(ca, cb, n, cg);
     return cg;
   }
   // one global low-detail land base (y = -0.05, under every LOD) so distant islands never float on the ocean
@@ -13986,9 +13990,19 @@ export function createTileBuilder(ctx) {
     let bb = new Batch(),
       k = 0,
       tB = performance.now();
+    // physics-audit: buildings the far LOD leaves out (farSkips) are drawn only by the mid / near builds, fences and
+    // fixed library sites only by the near build: their colliders go into their own soups (see propCollidersOn)
+    const smallSoup = new ColSoup(),
+      nearSoup = new ColSoup();
     for (const b of buildingsOf(tile)) {
       if (houseLots.claims(b)) continue; // r2-physics (QA-045): building parts are solid too (tall parts above a low outline were walk-through, roofs 11 m above their collider) // claimed houses bring their own colliders (setpieces/houses)
-      buildBuilding(NULLB, b, { coll: bb, shops: false, relief: LFc });
+      if (PROP_GATE && !audit && farSkips(b)) {
+        add(bb, solid);
+        bb = new Batch();
+        buildBuilding(NULLB, b, { coll: bb, shops: false, relief: LFc });
+        add(bb, smallSoup, LFc ? baseOf(b) : null);
+        bb = new Batch();
+      } else buildBuilding(NULLB, b, { coll: bb, shops: false, relief: LFc });
       if (LFc) {
         add(bb, audit ? soupOf('building') : solid, baseOf(b));
         bb = new Batch();
@@ -14001,15 +14015,25 @@ export function createTileBuilder(ctx) {
         tB = performance.now();
       }
     }
-    LIBM.fenceCollide(bb, tile, LFc);
     add(bb, audit ? soupOf('building') : solid);
+    bb = new Batch();
+    LIBM.fenceCollide(bb, tile, LFc);
+    add(bb, audit ? soupOf('building') : PROP_GATE ? nearSoup : solid);
     yield;
     if (tile.x0 !== undefined) {
       const fx = new Batch();
       LIBM.fixedCollide(fx, tile.x0, tile.z0, tile.size || provider.tileSize || 200);
-      add(fx, audit ? soupOf('building') : solid, 0);
+      add(fx, audit ? soupOf('building') : PROP_GATE ? nearSoup : solid, 0);
     } // fixed library sites (absolute heights)
     yield* commit(ground);
+    // physics-audit: buildings, fences and fixed sites (drawn by the mid / far LOD as well) get their own trimeshes;
+    // the colliders from here on belong to street furniture drawn only by this tile's NEAR build (see propCollidersOn)
+    yield* commit(solid);
+    const smallFrom = handles.length;
+    yield* commit(smallSoup);
+    const propFrom = handles.length;
+    yield* commit(nearSoup);
+    const keepOn = new Set();
     // primitive colliders for street furniture and trees
     const P = yield* ensureProps(t, tile);
     let cur = solid;
@@ -14234,8 +14258,13 @@ export function createTileBuilder(ctx) {
       for (const c of cols.values())
         cuboid(c.x, 0, (c.z0 + c.z1) / 2, 6.1, c.n * 1.3, (c.z1 - c.z0) / 2 + 1.22, 0);
     }
+    // water exits (stairs down seawalls) and elevated decks are walked on: never switched off with the props
+    yield* commit(solid);
+    const exitFrom = handles.length;
     sol('exit');
     exitColliders(tile, tri, box);
+    yield* commit(solid);
+    for (let i = exitFrom; i < handles.length; i++) keepOn.add(handles[i]);
     if (elevated) {
       const er = yield* elevTileG(t, { visual: false });
       if (er) {
@@ -14248,6 +14277,7 @@ export function createTileBuilder(ctx) {
           try {
             const h = world.createCollider(c.desc || c);
             handles.push(h);
+            keepOn.add(h);
             if (audit) colTags.set(h.handle, 'elev:' + (c.kind || '?'));
           } catch (e) {
             /* bad desc */
@@ -14336,8 +14366,57 @@ export function createTileBuilder(ctx) {
         arr._tag = tg;
         yield* commit(arr);
       }
+    t._propCols = handles.slice(propFrom).filter((h) => !keepOn.has(h));
+    t._propOwner = handles.dynOwner || null;
+    t._propColsOff = false;
+    t._smallCols = handles.slice(smallFrom, propFrom);
+    t._smallColsOff = false;
+    if (!t.near) propCollidersOn(t, false);
+    if (!t.near && !midTiles.has(t.tx + ',' + t.tz)) smallBuildingsOn(t, false);
     t._colPartial = null;
     return handles;
+  }
+  // physics-audit (Nov 19, user: "an invisible wall in the middle of nowhere"): the collider job of a tile runs ahead of
+  // its near build (feet and tires must never wait for the ground), but lamp posts, poles, benches, bins, kiosks and
+  // shelters are drawn only by the near build. Until it exists their colliders are switched off, so nothing undrawn
+  // stands in the street; buildNear switches them on. ?propgate=0 = the old behavior.
+  function propCollidersOn(t, on) {
+    const list = t._propCols;
+    if (!PROP_GATE || !list || t._propColsOff === !on) return;
+    t._propColsOff = !on;
+    for (const h of list) {
+      // a breakable that was knocked over removed its own collider: only touch live handles
+      const c = world.getCollider(h.handle);
+      if (c) c.setEnabled(on);
+    }
+    if (t._propOwner) dynProps.setOwnerEnabled(t._propOwner, on);
+    if (on) smallBuildingsOn(t, true);
+  }
+  // buildings under 12 m and 1500 m2 are not in the far LOD (lodBuildings): solid only once a mid or near build draws them
+  const farSkips = (b) => b.h < 12 && b.area < 1500;
+  const midTiles = new Set();
+  function smallBuildingsOn(t, on) {
+    const list = t._smallCols;
+    if (!PROP_GATE || !list || t._smallColsOff === !on) return;
+    t._smallColsOff = !on;
+    for (const h of list) {
+      const c = world.getCollider(h.handle);
+      if (c) c.setEnabled(on);
+    }
+  }
+  // a finished mid chunk draws every building of its tiles
+  function midBuilt(ca, cb, n, group) {
+    const keys = [];
+    for (let i = 0; i < n; i++)
+      for (let j = 0; j < n; j++) {
+        const tx = ca * n + i,
+          tz = cb * n + j;
+        keys.push(tx + ',' + tz);
+        midTiles.add(tx + ',' + tz);
+        const t = colTileReg.get(tx + ',' + tz);
+        if (t) smallBuildingsOn(t, true);
+      }
+    group.userData.midTiles = keys;
   }
   // ---- water exits: stair flights down seawalls / pier ends every ~200 m, sloped sand skirts on beaches ----
   const exitCache = new WeakMap();
@@ -14782,6 +14861,7 @@ export function createTileBuilder(ctx) {
   }
   function dispose(group) {
     if (!group) return;
+    for (const k of group.userData.midTiles || []) midTiles.delete(k);
     tileBatch.release(group);
     lawnIndex.delete(group);
     for (const e of moorings.values())

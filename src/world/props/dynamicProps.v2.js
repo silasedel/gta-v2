@@ -88,6 +88,7 @@ function create(game) {
         .setCcdEnabled(true),
     );
     for (const d of shapeDescs(rec)) world.createCollider(d, b);
+    if (rec.off) b.setEnabled(false);
     rec.body = b;
     live.add(rec);
     stats.bodies++;
@@ -174,6 +175,7 @@ function create(game) {
         .setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }),
     );
     for (const d of shapeDescs(rec)) world.createCollider(d, fb);
+    if (rec.off) fb.setEnabled(false);
     rec.fixed = fb;
   }
   function dropFixed(rec) {
@@ -209,6 +211,18 @@ function create(game) {
     dropFixed(rec);
     stats.items--;
     rec.dead = true;
+  }
+  // physics-audit: a tile's props are drawn by its near build; until that exists their bodies are switched off
+  // (src/world/miami/tilebuild.js propCollidersOn), so no undrawn sign post or cart stops a car
+  function setOwnerEnabled(owner, on) {
+    const o = byOwner.get(owner);
+    if (!o) return;
+    for (const rec of o) {
+      if (rec.dead) continue;
+      rec.off = !on;
+      if (rec.fixed) rec.fixed.setEnabled(on);
+      if (rec.body) rec.body.setEnabled(on);
+    }
   }
   function removeOwner(owner) {
     const o = byOwner.get(owner);
@@ -546,6 +560,7 @@ function create(game) {
   return Object.assign(api, {
     add,
     removeOwner,
+    setOwnerEnabled,
     update,
     near,
     stats,
@@ -574,6 +589,9 @@ export const dynProps = {
   },
   removeOwner(owner) {
     if (inst) inst.removeOwner(owner);
+  },
+  setOwnerEnabled(owner, on) {
+    if (inst) inst.setOwnerEnabled(owner, on);
   },
   near(x, z, r) {
     return inst ? inst.near(x, z, r) : [];

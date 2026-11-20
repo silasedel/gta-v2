@@ -167,7 +167,8 @@
     const mat = Array.isArray(mesh.material)
       ? mesh.material[h.face.materialIndex || 0]
       : mesh.material;
-    if (!hasNearCut(mat)) {
+    const lod = /^chunk-(mid|far)|terrain-lod/.test(mesh.name || '') || mat?.name === 'facade-far';
+    if (!lod && !hasNearCut(mat)) {
       return false;
     }
     const tx = Math.floor(at.getX(h.face.a) + 0.5);
@@ -424,6 +425,8 @@
           tag: g.city?.colTags?.get?.(c.handle) || null,
           owner: owner(c),
           speed: speedOf(c),
+          // false: the tile at the hit has no near (full-detail) build yet, so only mid / far LOD is drawn there
+          tileNear: nearTiles(Math.floor(p.x / 200), Math.floor(p.z / 200)),
           handle: c.handle,
         });
       }
@@ -587,6 +590,9 @@
       ghaMinusDrawn: [],
       npcMinusDrawn: [],
       noCollider: 0,
+      insideSolid: 0,
+      lodOnly: 0,
+      lodDrawnMinusCol: [],
       worst: [],
       noDrawn: 0,
       groundMeshes: {},
@@ -616,6 +622,11 @@
         const drawn = origin.y - mh.distance;
         // then the collider surface at that drawn ground (a 1 m window around it)
         const col = colliderGround(x, z, drawn + 0.5, 1);
+        // the ray starting inside a solid (a trunk, a post) is not a ground reading
+        if (col && col.y > drawn + 0.49) {
+          out.insideSolid++;
+          continue;
+        }
         if (!col || col.n < 0.5) {
           out.noCollider++;
           continue;
@@ -625,6 +636,13 @@
         const npc = npcGround(x, z, gha) - drawn;
         const nm = labelOf(mh.object);
         out.groundMeshes[nm] = (out.groundMeshes[nm] || 0) + 1;
+        // a tile without its near build shows only the coarse LOD ground: counted apart (a streaming state, not a
+        // collider / mesh mismatch of the finished tile)
+        if (!nearTiles(Math.floor(x / 200), Math.floor(z / 200))) {
+          out.lodOnly++;
+          out.lodDrawnMinusCol.push(+d.toFixed(3));
+          continue;
+        }
         out.n++;
         out.drawnMinusCol.push(+d.toFixed(3));
         out.ghaMinusDrawn.push(+ga.toFixed(3));
