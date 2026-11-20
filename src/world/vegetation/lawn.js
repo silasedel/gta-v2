@@ -16,6 +16,8 @@ import { GM_GLSL, gmUniforms } from '../ground/surfaceMask.js';
 
 const MOWN_Z =
   /beach|nightlife|park|residential|downtown|business|brickell|midtown|edgewater|arts|causeway|commercial/;
+// world_nov19b: soft rim of the lawn field window on the ground. ?nov19b=0 = old.
+const LAWN_RIM = !(typeof location !== 'undefined' && /[?&]nov19b=0\b/.test(location.search));
 const FN = 256,
   FSIZE = 128,
   FRES = FSIZE / FN,
@@ -424,7 +426,7 @@ float gGust(vec2 p) { vec2 d = uVegWindDir; float along = dot(p, d), across = -p
         sh.fragmentShader.replace(
           '#include <emissivemap_fragment>',
           `
-  { vec2 fuv = (vGW - uFieldO) / uFieldS; vec4 fl = texture2D(uField, fuv); float inF = step(0.0, fuv.x) * step(fuv.x, 1.0) * step(0.0, fuv.y) * step(fuv.y, 1.0);
+  { vec2 fuv = (vGW - uFieldO) / uFieldS; vec4 fl = texture2D(uField, fuv); float inF = ${LAWN_RIM ? 'smoothstep(0.0, 14.0, min(min(fuv.x, 1.0 - fuv.x), min(fuv.y, 1.0 - fuv.y)) * uFieldS)' : 'step(0.0, fuv.x) * step(fuv.x, 1.0) * step(0.0, fuv.y) * step(fuv.y, 1.0)'}; // world_nov19b: stripes / dryness fade out over the field window's last 14 m (it was a hard square edge that jumped when the field re-centered)
     float dC = distance(vGW, cameraPosition.xz); vec3 soilC = texture2D(uSoil, vGW * 0.5).rgb * 1.25;
     float near = 1.0 - smoothstep(26.0, 42.0, dC), bare = fl.b > 0.5 ? (fl.b - 0.5) * 2.0 : 0.0;
     diffuseColor.rgb = mix(diffuseColor.rgb, soilC * vec3(0.62, 0.95, 0.45), near * 0.55 * inF);

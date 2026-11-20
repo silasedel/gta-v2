@@ -20,6 +20,7 @@ import GRADE from '../vegetation/grade.json'; // r2-veg's per-model color gain i
 
 export const order = 66;
 const OFF = typeof location !== 'undefined' && /[?&]ggrass=0\b/.test(location.search);
+const SLAB_CHECK = !(typeof location !== 'undefined' && /[?&]nov19b=0\b/.test(location.search)); // world_nov19b
 const CELL = 1.25,
   R_NEAR = 12,
   R_FAR = 30,
@@ -240,6 +241,9 @@ export async function initV2(game) {
                     : 0;
           dry = 0.4;
           y = city.groundHeightAt ? city.groundHeightAt(x, z) : 0;
+          // world_nov19b (user: "random grass patches over the road"): a raised built surface (town plaza slab, pad, deck)
+          // the map still calls grass: the clumps stood on the slab. Grass only grows on ground at the drawn terrain level.
+          if (SLAB_CHECK && terr?.heightAt && y - terr.heightAt(x, z) > 0.15) dens = 0;
         }
         let clear = 0;
         const jn = (vn(x / 4.1 + 2.7, z / 4.1 - 6.3) - 0.5) * 6;

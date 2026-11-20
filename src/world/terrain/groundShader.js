@@ -204,6 +204,9 @@ export function recipeUniforms(keys) {
   };
 }
 
+// world_nov19b: seamless class borders across terrain triangles (see the blend in patchGround). ?nov19b=0 = old.
+const GSEAM = !(typeof location !== 'undefined' && /[?&]nov19b=0\b/.test(location.search));
+
 export const GROUND_GLSL_HEAD =
   CAUSTIC_GLSL +
   /* glsl */ `
@@ -350,9 +353,21 @@ export function patchGround(mat, lod, opts, tex, U) {
         GS s2 = s0; if (c2 == c1) s2 = s1; else if (c2 != c0) s2 = gRecipe(c2, wp, gdx, gdy, gWantN);
         float bn = gN(wp * 0.45) * 0.6 + gN(wp * 1.7 + 3.3) * 0.4;
         // ground pass: per-corner world noise (two scales) breaks the triangle-shaped class borders into irregular patches
-        vec3 bnc = vec3(gN(wp * 0.37 + 11.0), gN(wp * 0.37 - 7.0), gN(wp * 0.37 + 23.0)) * 0.65 + vec3(gN(wp * 1.9 + 3.0), gN(wp * 1.9 - 5.0), gN(wp * 1.9 + 9.0)) * 0.35;
+        ${
+          GSEAM
+            ? `// world_nov19b (user: "weird triangle formations" in the grass): the blend was not continuous across triangle edges. The
+        // corner noise was keyed by the corner's slot (0 / 1 / 2, which differs between the two triangles of an edge) and the texture
+        // height term was not scaled by the barycentric, so a corner kept weight on the far edge: every class border showed the
+        // triangle outline as a seam. Now the noise is keyed by the class and every term vanishes at the far edge, and the border
+        // band is a little wider (one soft transition instead of a stepped quilt). ?nov19b=0 = old.
+        vec3 bk = vec3(float(c0), float(c1), float(c2)) * 7.13;
+        vec3 bnc = vec3(gN(wp * 0.37 + bk.x), gN(wp * 0.37 + bk.y), gN(wp * 0.37 + bk.z)) * 0.65 + vec3(gN(wp * 1.9 - bk.x), gN(wp * 1.9 - bk.y), gN(wp * 1.9 - bk.z)) * 0.35;
+        vec3 tw = vBary * mix(vec3(0.3), vec3(1.7), bnc) + vec3(s0.h, s1.h, s2.h) * 0.55 * smoothstep(0.0, 0.3, vBary) + (bn - 0.5) * 0.5 * vBary;
+        float tmx = max(tw.x, max(tw.y, tw.z)) - 0.32; tw = max(tw - tmx, vec3(0.0)); tw /= max(1e-4, tw.x + tw.y + tw.z);`
+            : `vec3 bnc = vec3(gN(wp * 0.37 + 11.0), gN(wp * 0.37 - 7.0), gN(wp * 0.37 + 23.0)) * 0.65 + vec3(gN(wp * 1.9 + 3.0), gN(wp * 1.9 - 5.0), gN(wp * 1.9 + 9.0)) * 0.35;
         vec3 tw = vBary * mix(vec3(0.3), vec3(1.7), bnc) + vec3(s0.h, s1.h, s2.h) * 0.55 + (bn - 0.5) * 0.5 * vBary; // multiplicative: a corner's weight still vanishes on the far edge (no seam to the next triangle)
-        float tmx = max(tw.x, max(tw.y, tw.z)) - 0.24; tw = max(tw - tmx, vec3(0.0)); tw /= max(1e-4, tw.x + tw.y + tw.z);
+        float tmx = max(tw.x, max(tw.y, tw.z)) - 0.24; tw = max(tw - tmx, vec3(0.0)); tw /= max(1e-4, tw.x + tw.y + tw.z);`
+        }
         gs.alb = s0.alb * tw.x + s1.alb * tw.y + s2.alb * tw.z; gs.tilt = s0.tilt * tw.x + s1.tilt * tw.y + s2.tilt * tw.z;
         gs.ao = s0.ao * tw.x + s1.ao * tw.y + s2.ao * tw.z; gs.rough = s0.rough * tw.x + s1.rough * tw.y + s2.rough * tw.z;
         gs.h = s0.h * tw.x + s1.h * tw.y + s2.h * tw.z; gs.wet = s0.wet * tw.x + s1.wet * tw.y + s2.wet * tw.z; gs.shore = s0.shore * tw.x + s1.shore * tw.y + s2.shore * tw.z;
