@@ -69,6 +69,10 @@ const KEEP = [
   'RightToeBase',
 ];
 const NB = KEEP.length;
+// crowd people's mesh detail by camera distance: full scan within [0] m, the 5k LOD1 within [1] m, 1.2k LOD2 beyond
+// (the near tier's own switch is 15 / 60 m; '?farlod=0' = LOD2 everywhere, as before Nov 19b)
+const LOD_NEAR =
+  typeof location !== 'undefined' && /[?&]farlod=0\b/.test(location.search) ? [-1, -1] : [10, 45];
 function bakeList(base) {
   const m = base.meta || {};
   const old = (m.years || 30) > 62,
@@ -145,6 +149,8 @@ const POSE_SLOT = {
   29: 'cross',
 };
 const LOCO = new Set(['walk', 'jog', 'run', 'sprint']);
+// src/npc/people.v2.js gaitFor: the cadence it sends assumes this stride (m per cycle at amp 1, 1.75 m tall)
+const STRIDE_REF = 1.41;
 /** people the far crowd is showing (src/npc/people/cast.js never unloads these) */
 export const FAR_IN_USE = new Set();
 
@@ -178,20 +184,45 @@ function* bakePerson(base) {
     const i = sk.bones.findIndex((b) => norm(b.name) === n);
     return i >= 0 ? sk.boneInverses[i] : new THREE.Matrix4();
   });
-  // geometry: LOD2 positions / normals / uvs, skin indices remapped to kept slots
-  const g0 = mesh.geometry;
-  const g = new THREE.InstancedBufferGeometry();
-  g.index = g0.index;
-  for (const k of ['position', 'normal', 'uv'])
-    if (g0.attributes[k]) g.setAttribute(k, g0.attributes[k]);
-  const si = g0.attributes.skinIndex,
-    sw = g0.attributes.skinWeight;
-  const fi = new Float32Array(si.count * 4);
-  for (let v = 0; v < si.count; v++)
-    for (let c = 0; c < 4; c++) fi[v * 4 + c] = slotOf[si.getComponent(v, c)] ?? 0;
-  g.setAttribute('fSkinIdx', new THREE.BufferAttribute(fi, 4));
-  g.setAttribute('fSkinW', sw);
-  g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e6);
+  // geometry: positions / normals / uvs, skin indices remapped to kept slots
+  const skinGeo = (m, slots) => {
+    const g0 = m.geometry;
+    const g = new THREE.InstancedBufferGeometry();
+    g.index = g0.index;
+    for (const k of ['position', 'normal', 'uv'])
+      if (g0.attributes[k]) g.setAttribute(k, g0.attributes[k]);
+    const si = g0.attributes.skinIndex,
+      sw = g0.attributes.skinWeight;
+    const fi = new Float32Array(si.count * 4);
+    for (let v = 0; v < si.count; v++)
+      for (let c = 0; c < 4; c++) fi[v * 4 + c] = slots[si.getComponent(v, c)] ?? 0;
+    g.setAttribute('fSkinIdx', new THREE.BufferAttribute(fi, 4));
+    g.setAttribute('fSkinW', sw);
+    g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e6);
+    return g;
+  };
+  const g = skinGeo(mesh, slotOf);
+  // Nov 19b (user: "some NPCs are insanely low poly"): crowd people who come close use the person's own 5k LOD1 / full
+  // LOD0 body (same skeleton, bind and bone inverses as LOD2, so the same bone texture drives them), built on first use
+  const geos = { 2: g };
+  const geoFor = (lv) => {
+    if (geos[lv] !== undefined) return geos[lv];
+    geos[lv] = null;
+    let m = null;
+    scene.traverse((o) => {
+      if (!m && o.isSkinnedMesh && o.name.includes('LOD' + lv) && /_body/.test(o.name)) m = o;
+    });
+    if (!m || !m.bindMatrix.equals(mesh.bindMatrix)) return null;
+    const sk2 = m.skeleton;
+    const same = sk2.bones.every((b, i) => {
+      const j = sk.bones.findIndex((x) => x.name === b.name);
+      return j >= 0 && sk2.boneInverses[i].equals(sk.boneInverses[j]);
+    });
+    if (!same) return null;
+    const slots = sk2.bones.map((b) => slotOf[sk.bones.findIndex((x) => x.name === b.name)] ?? 0);
+    geos[lv] = skinGeo(m, slots);
+    return geos[lv];
+  };
   // rows
   const list = bakeList(base);
   const slots = {};
@@ -288,11 +319,23 @@ function* bakePerson(base) {
   tex.generateMipmaps = false;
   tex.needsUpdate = true;
   const durOf = {};
+  const strideOf = {};
   for (const [nm, clip] of list) {
     const c = base.clips[Array.isArray(clip) ? clip[0] : clip];
     durOf[nm] = c ? c.duration : 1;
+    if (c && c.userData.speed) strideOf[nm] = c.userData.speed * c.duration;
   }
-  return { geo: g, tex, slots, durOf, height: base.height || base.meta?.height || 1.75 };
+  return {
+    geo: g,
+    geoFor,
+    geos,
+    mat: null,
+    tex,
+    slots,
+    durOf,
+    strideOf,
+    height: base.height || base.meta?.height || 1.75,
+  };
 }
 
 // ---------------------------------------------------------------- shader
@@ -380,6 +423,7 @@ export function createPeopleCrowd(game, opts = {}) {
   (opts.scene || game.scene).add(blobs);
   const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
   let bakeBudget = 0;
+  let lodScan = 0;
 
   const jobs = new Map(); // person id -> running bake generator
   function getBake(pid) {
@@ -439,27 +483,32 @@ export function createPeopleCrowd(game, opts = {}) {
     m.customProgramCacheKey = () => 'npcPeopleFar1';
     return m;
   }
-  function bucketFor(pid) {
-    let B = buckets.get(pid);
+  function bucketFor(pid, lv = 2) {
+    const key = lv === 2 ? pid : pid + ':' + lv;
+    let B = buckets.get(key);
     if (B) return B;
     const bk = getBake(pid);
     const base = getPerson(pid);
     if (!bk || !base) return null;
-    B = { pid, bk, base, n: 0, cap: 0, idx: [], mesh: null, aAnim: null, aFade: null };
+    const geo = lv === 2 ? bk.geo : bk.geoFor(lv);
+    if (!geo) return null;
+    B = { pid, lv, bk, base, geo, n: 0, cap: 0, idx: [], mesh: null, aAnim: null, aFade: null };
     grow(B, 8);
-    buckets.set(pid, B);
+    buckets.set(key, B);
     return B;
   }
   function grow(B, cap) {
-    const g = B.bk.geo.clone(); // shares the vertex buffers, own instance attributes
+    const g = B.geo.clone(); // shares the vertex buffers, own instance attributes
     const aAnim = new THREE.InstancedBufferAttribute(new Float32Array(cap * 4), 4);
     aAnim.setUsage(THREE.DynamicDrawUsage);
     const aFade = new THREE.InstancedBufferAttribute(new Float32Array(cap), 1);
     aFade.setUsage(THREE.DynamicDrawUsage);
     g.setAttribute('aAnim', aAnim);
     g.setAttribute('aFade', aFade);
-    const mesh = new THREE.InstancedMesh(g, B.mesh ? B.mesh.material : material(B.bk, B.base), cap);
-    mesh.name = 'npc-far:' + B.pid;
+    // one material (one bone texture) per person, shared by its LOD buckets: no new shader program
+    B.bk.mat ||= material(B.bk, B.base);
+    const mesh = new THREE.InstancedMesh(g, B.bk.mat, cap);
+    mesh.name = 'npc-far:' + B.pid + (B.lv === 2 ? '' : ':LOD' + B.lv);
     mesh.frustumCulled = false;
     mesh.castShadow = false;
     mesh.receiveShadow = true;
@@ -482,6 +531,13 @@ export function createPeopleCrowd(game, opts = {}) {
     B.aFade = aFade;
     B.cap = cap;
   }
+  function personShown(pid) {
+    for (const lv of [2, 1, 0]) {
+      const B = buckets.get(lv === 2 ? pid : pid + ':' + lv);
+      if (B && B.n) return true;
+    }
+    return false;
+  }
   function detach(i) {
     const I = inst[i];
     if (!I || !I.B) return;
@@ -500,7 +556,7 @@ export function createPeopleCrowd(game, opts = {}) {
     B.idx.length = last;
     B.n = last;
     B.mesh.count = B.n;
-    if (!B.n) FAR_IN_USE.delete(B.pid);
+    if (!B.n && !personShown(B.pid)) FAR_IN_USE.delete(B.pid);
     B.mesh.instanceMatrix.needsUpdate = true;
     B.aAnim.needsUpdate = true;
     B.aFade.needsUpdate = true;
@@ -509,7 +565,11 @@ export function createPeopleCrowd(game, opts = {}) {
   }
   function attach(i, pid) {
     const I = inst[i];
-    const B = bucketFor(pid);
+    let B = I.lv !== 2 ? bucketFor(pid, I.lv) : null;
+    if (!B) {
+      I.lv = 2;
+      B = bucketFor(pid, 2);
+    }
     if (!B) return false;
     if (B.n >= B.cap) grow(B, B.cap * 2);
     I.B = B;
@@ -524,6 +584,39 @@ export function createPeopleCrowd(game, opts = {}) {
     B.aFade.needsUpdate = true;
     return true;
   }
+  // mesh detail by camera distance (Nov 19b): LOD2 (1.2k tris) far, the person's 5k LOD1 within LOD_NEAR[1] m, the full
+  // scan within LOD_NEAR[0] m (crowd walkers who come close keep walking until out of view: they must not look like the
+  // 1.2k far mesh next to the camera). Moves the instance to the other bucket; returns true when it did (matrix written).
+  function relod(i) {
+    const I = inst[i];
+    const cam = game.camera?.position;
+    if (!I || !I.B || !cam) return false;
+    const d = Math.hypot(I.x - cam.x, I.y - cam.y, I.z - cam.z);
+    let lv = I.lv;
+    if (lv === 2 && d < LOD_NEAR[1] * 0.92) lv = 1;
+    if (lv === 1 && d > LOD_NEAR[1] * 1.08) lv = 2;
+    if (lv === 1 && d < LOD_NEAR[0] * 0.9) lv = 0;
+    if (lv === 0 && d > LOD_NEAR[0] * 1.1) lv = d > LOD_NEAR[1] ? 2 : 1;
+    if (lv === I.lv) return false;
+    const pid = I.B.pid;
+    detach(i);
+    I.lv = lv;
+    attach(i, pid);
+    return true;
+  }
+  // foot sync (Nov 19b): the crowd's cadence assumes STRIDE_REF; this person's baked cycle covers its own measured stride
+  // (scaled with the instance), so the cycle rate is corrected by their ratio and the feet do not slide
+  function strideK(I) {
+    const bk = I.B?.bk;
+    if (!bk) return 1;
+    let slot = POSE_SLOT[I.pose] || 'stand';
+    if (I.pose === POSE.run && I.amp < 0.9) slot = 'jog';
+    const st = bk.strideOf[slot];
+    if (!LOCO.has(slot) || !st) return 1;
+    const used = STRIDE_REF * I.amp * (I.h / 1.75);
+    const own = st * (I.h / (bk.height || 1.75));
+    return THREE.MathUtils.clamp(used / own, 0.5, 2);
+  }
   function writeAnim(i) {
     const I = inst[i];
     const B = I.B;
@@ -534,7 +627,14 @@ export function createPeopleCrowd(game, opts = {}) {
     const s = bk.slots[slot] || bk.slots.stand;
     let rate, off;
     if (LOCO.has(slot)) {
-      rate = I.cad / (Math.PI * 2);
+      const k = strideK(I);
+      if (k !== I.k) {
+        // keep the phase continuous when the factor changes (first attach, new person, new height)
+        const t = uTime.value;
+        I.off += t * I.cad * (I.k - k);
+        I.k = k;
+      }
+      rate = (I.cad * I.k) / (Math.PI * 2);
       off = I.off / (Math.PI * 2);
     } else {
       rate = (1 / Math.max(0.2, bk.durOf[slot] || 1)) * (slot === 'dance' ? 1 : 1);
@@ -592,6 +692,8 @@ export function createPeopleCrowd(game, opts = {}) {
         hd: 0,
         h: 1.75,
         seed: Math.random(),
+        lv: 2,
+        k: 1,
       };
       blobs.count = high;
       return i;
@@ -638,11 +740,11 @@ export function createPeopleCrowd(game, opts = {}) {
       const I = inst[i];
       if (!I) return;
       const t = uTime.value;
-      const cur = phase === null ? t * I.cad + I.off : phase;
+      const cur = phase === null ? t * I.cad * I.k + I.off : phase;
       I.pose = id;
       I.cad = cadence;
       I.amp = amp;
-      I.off = (cur % 6283.185307) - t * cadence;
+      I.off = (cur % 6283.185307) - t * cadence * I.k;
       writeAnim(i);
     },
     setTransform(i, x, y, z, heading, height, blobScale = 1) {
@@ -665,7 +767,7 @@ export function createPeopleCrowd(game, opts = {}) {
       I.z = z;
       I.hd = heading;
       I.h = height || I.h;
-      writeMat(i);
+      if (!relod(i)) writeMat(i);
       _q.setFromEuler(_e.set(0, heading, 0));
       _mx.compose(
         _p.set(x, y + 0.03, z),
@@ -678,6 +780,11 @@ export function createPeopleCrowd(game, opts = {}) {
     update(dt) {
       uTime.value += dt;
       bakeBudget = 0;
+      // standing people do not call setTransform: re-check a slice of them against the moving camera every frame
+      for (let k = 0; k < 40 && high > 0; k++) {
+        lodScan = (lodScan + 1) % high;
+        if (inst[lodScan]?.B) relod(lodScan);
+      }
       // instances waiting for their person's bake (one bake per frame)
       for (const i of waiting) {
         const I = inst[i];
@@ -699,7 +806,7 @@ export function createPeopleCrowd(game, opts = {}) {
     },
     get tris() {
       let n = 0;
-      for (const B of buckets.values()) n += (B.bk.geo.index ? B.bk.geo.index.count / 3 : 0) * B.n;
+      for (const B of buckets.values()) n += (B.geo.index ? B.geo.index.count / 3 : 0) * B.n;
       return n;
     },
     stats() {
@@ -708,15 +815,23 @@ export function createPeopleCrowd(game, opts = {}) {
         baked: baked.size,
         inst: high - free.length,
         shown: [...buckets.values()].reduce((s, B) => s + B.n, 0),
+        lods: [0, 1, 2].map((lv) =>
+          [...buckets.values()].filter((B) => B.lv === lv).reduce((s, B) => s + B.n, 0),
+        ),
       };
+    },
+    // tests / A-B: the LOD switch distances ([-1, -1] = LOD2 everywhere, as before Nov 19b)
+    setLodNear(n0, n1) {
+      LOD_NEAR[0] = n0;
+      LOD_NEAR[1] = n1;
     },
     dispose() {
       group.parent?.remove(group);
       blobs.parent?.remove(blobs);
       for (const B of buckets.values()) {
         B.mesh.geometry.dispose();
-        B.mesh.material.dispose();
       }
+      for (const b of baked.values()) b?.mat?.dispose();
       for (const b of baked.values()) b?.tex.dispose();
       sg.dispose();
       smat.dispose();

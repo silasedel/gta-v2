@@ -284,6 +284,14 @@ stations, models), `src/gameplay/wantedCore.js` (six-star state machine, pure), 
   places, hat height, logo boxes): `tools/v2/npcs/people.json`; rebuild `tools/v2/npcs/build.sh [ids]`.
 - Skeleton: the 52 Mixamo-named joints of the archetypes (`mixamorig:Hips` ... fingers), canonical T-pose rest; the clip
   library `src/npc/arch/anim.js` drives everybody (`src/npc/people/lib.js` shares one bound clip set).
+- Locomotion (Nov 19b): walk / run / base idle cycles are Mixamo motion capture (`Xbot.glb`, `Soldier.glb`) baked by
+  `tools/v2/npcs/bake_mocap.mjs` into `src/npc/arch/mocap.data.js` (canonical parent-relative deltas, no fingers);
+  `MOCAP_STYLE` in anim.js derives walk_f / walk_heels / walk_old / walk_brisk / jog / sprint. Foot sync: a captured
+  clip's speed is the mid-stance ankle speed; the cycle advances by real distance over stride. `?mocap=0` = old gaits.
+- Crowd tier detail (Nov 19b): `farCrowd.js` instances switch to the person's LOD1 within 45 m and LOD0 within 10 m
+  (same bone texture and material, buckets per person + LOD); `?farlod=0` = LOD2 everywhere.
+- Women's secondary motion (Nov 19b): `src/npc/people/jiggle.js` (Mari's spring model and painted weights from
+  `src/player/mari/jiggle.js`), women of the user's people within 12 m at LOD0, at most 6; `?npcjiggle=0` off.
 - Places (roles -> where they spawn, `src/npc/people/cast.js placesFor`): street, residential, keys, rural, farm, dock,
   fishing, port, work, industrial, business, nightlife, bar, tourist, beach, beach_walk, swim, sport, park, rough,
   shop_staff, shop_guest, kitchen, hotel_staff, security, medic, lifeguard, police, police_swat, police_detective.

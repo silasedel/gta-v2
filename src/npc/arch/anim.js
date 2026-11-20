@@ -1,11 +1,16 @@
-// NPC animation library (PEOPLE-LOOK track). Every clip here is original and procedural: gait cycles are generated from
-// clinical gait-curve shapes (hip / knee / ankle angles, pelvis bob, sway, rotation and obliquity, trunk counter-rotation,
-// arm swing), poses and idles are hand-keyed. No Mixamo or other captured data.
+// NPC animation library (PEOPLE-LOOK track). Poses, idles and action clips are original and hand-keyed / procedural.
+// Locomotion (Nov 19b, user: "the NPCs are walking terribly"): the walk, run and base idle cycles are motion capture
+// (Mixamo takes from Xbot.glb / Soldier.glb, baked by tools/v2/npcs/bake_mocap.mjs into ./mocap.data.js), with
+// per-style variants (women, heels, seniors, brisk) derived from the captured cycles. '?mocap=0' = the old procedural
+// gait generator (clinical gait curves) for A/B.
 // Convention (same as src/player/proceduralClips.js): canonical T-pose, every bone's rest frame aligned to the model
 // axes, facing +Z, character-left = +X, up = +Y. Rotations are lists of [axis, degrees], applied in order about the
 // model axes. bindClips() converts them to each archetype's own rest frames (A-pose, heel pose, any proportions).
 import * as THREE from 'three';
 import { buildProceduralClips } from '../../player/proceduralClips.js';
+import { MOCAP } from './mocap.data.js';
+
+const MOCAP_ON = !(typeof location !== 'undefined' && /[?&]mocap=0\b/.test(location.search));
 
 const D2R = Math.PI / 180;
 const AX = {
@@ -544,6 +549,191 @@ function gaitKeys(o, N = 24) {
     });
   }
   return keys;
+}
+
+// ------------------------------------------------------------------ motion capture (./mocap.data.js)
+// bone -> style group for the amplitude changes
+const MOCAP_GROUP = {
+  Hips: 'pelvis',
+  Spine: 'trunk',
+  Spine1: 'trunk',
+  Spine2: 'trunk',
+  Neck: 'trunk',
+  Head: 'trunk',
+  LeftShoulder: 'arms',
+  LeftArm: 'arms',
+  LeftForeArm: 'arms',
+  LeftHand: 'arms',
+  RightShoulder: 'arms',
+  RightArm: 'arms',
+  RightForeArm: 'arms',
+  RightHand: 'arms',
+  LeftUpLeg: 'legs',
+  LeftLeg: 'legs',
+  RightUpLeg: 'legs',
+  RightLeg: 'legs',
+  LeftFoot: 'feet',
+  LeftToeBase: 'feet',
+  RightFoot: 'feet',
+  RightToeBase: 'feet',
+};
+const _mq = new THREE.Quaternion();
+const _mm = new THREE.Quaternion();
+const _ma = new THREE.Quaternion();
+
+/**
+ * A captured cycle as canonical keys, with optional style changes (all default to "as captured"):
+ *   dur:   time scale
+ *   amp:   { pelvis | trunk | arms | legs | feet: k } motion amplitude about the cycle mean (legs 0.8 = shorter stride)
+ *   add:   { Bone: ops } extra rotation in the parent's frame on top of the capture (posture: stoop, bent knees, arms in)
+ *   lat:   lateral hips shift scale (hip sway)
+ *   hands: finger pose for both hands
+ *   mirror: left <-> right
+ */
+function mocapKeys(src, o = {}) {
+  const M = MOCAP[src];
+  const nb = M.bones.length;
+  const nk = M.t.length;
+  const ts = o.dur || 1;
+  const amp = o.amp || {};
+  const add = {};
+  for (const n in o.add || {}) add[n] = Q(o.add[n]);
+  // per-bone cycle mean (sign-aligned average), the pivot of the amplitude changes
+  const mean = [];
+  for (let bi = 0; bi < nb; bi++) {
+    const s = [0, 0, 0, 0];
+    const ref = (bi * 4) | 0;
+    for (let i = 0; i < nk; i++) {
+      const j = (i * nb + bi) * 4;
+      const d =
+        M.q[j] * M.q[ref] +
+        M.q[j + 1] * M.q[ref + 1] +
+        M.q[j + 2] * M.q[ref + 2] +
+        M.q[j + 3] * M.q[ref + 3];
+      const sg = d < 0 ? -1 : 1;
+      for (let c = 0; c < 4; c++) s[c] += sg * M.q[j + c];
+    }
+    mean.push(new THREE.Quaternion(s[0], s[1], s[2], s[3]).normalize());
+  }
+  const hands = o.hands || HANDS_RELAX;
+  const keys = [];
+  for (let i = 0; i < nk; i++) {
+    const b = { ...hands };
+    let hipsRot = null;
+    for (let bi = 0; bi < nb; bi++) {
+      const n = M.bones[bi];
+      const j = (i * nb + bi) * 4;
+      _mq.set(M.q[j], M.q[j + 1], M.q[j + 2], M.q[j + 3]);
+      const a = amp[MOCAP_GROUP[n]];
+      if (a !== undefined && a !== 1) {
+        _mm.copy(mean[bi]);
+        _mq.copy(_mm.slerp(_mq, a));
+      }
+      if (add[n]) _mq.premultiply(_ma.copy(add[n]));
+      const ops = [['q', _mq.toArray([])]];
+      if (n === 'Hips') hipsRot = ops;
+      else b[n] = ops;
+    }
+    const h = M.hips;
+    keys.push({
+      t: M.t[i] * ts,
+      b,
+      hips: [h[i * 3] * (o.lat ?? 1), h[i * 3 + 1], h[i * 3 + 2]],
+      hipsRot,
+    });
+  }
+  return o.mirror ? keys.map(mirrorKey) : keys;
+}
+const HANDS_WALK = merge(handPose('Left', 22, 0.6), handPose('Right', 22, 0.6));
+const HANDS_RUN = merge(handPose('Left', 46, 0.7), handPose('Right', 46, 0.7));
+// style variants of the captured cycles (signs as in gaitKeys: UpLeg z + = foot out for the left leg, x - = thigh
+// forward; Leg x + = knee bend; Spine x + = forward flex; Arm z - (left) = arm in to the body; ForeArm y - (left) = elbow bend)
+const MOCAP_STYLE = {
+  // women: narrower track (feet toward the midline), more hip sway, arms closer with softer elbows and less swing
+  fem: {
+    dur: 1.03,
+    lat: 1.45,
+    amp: { pelvis: 1.6, arms: 0.72 },
+    add: {
+      LeftUpLeg: [['z', -2.6]],
+      RightUpLeg: [['z', 2.6]],
+      LeftArm: [['z', -3]],
+      RightArm: [['z', 3]],
+      LeftForeArm: [['y', -7]],
+      RightForeArm: [['y', 7]],
+    },
+  },
+  // heels: shorter steps placed on a line, stiffer ankles, the most hip sway
+  heels: {
+    dur: 0.98,
+    lat: 1.7,
+    amp: { pelvis: 1.9, arms: 0.62, legs: 0.86, feet: 0.55 },
+    add: {
+      LeftUpLeg: [['z', -4]],
+      RightUpLeg: [['z', 4]],
+      LeftArm: [['z', -3]],
+      RightArm: [['z', 3]],
+      LeftForeArm: [['y', -9]],
+      RightForeArm: [['y', 9]],
+      Spine2: [['x', -2]],
+    },
+  },
+  // seniors: slower, shorter steps, a slight stoop with bent knees, little arm swing
+  old: {
+    dur: 1.2,
+    lat: 1.1,
+    amp: { legs: 0.74, feet: 0.7, arms: 0.45, pelvis: 0.7 },
+    add: {
+      Spine: [['x', 4]],
+      Spine1: [['x', 5]],
+      Spine2: [['x', 3]],
+      Neck: [['x', -4]],
+      Head: [['x', -5]],
+      LeftUpLeg: [['x', -5]],
+      RightUpLeg: [['x', -5]],
+      LeftLeg: [['x', 7]],
+      RightLeg: [['x', 7]],
+      LeftForeArm: [['y', -10]],
+      RightForeArm: [['y', 10]],
+    },
+  },
+  brisk: { dur: 0.88, amp: { legs: 1.08, arms: 1.2 } },
+};
+function addMocapClips(C) {
+  const loco = (name, src, style, run) => {
+    const st = typeof style === 'string' ? MOCAP_STYLE[style] : style;
+    const o = { ...(st || {}), hands: run ? HANDS_RUN : HANDS_WALK };
+    C[name] = {
+      name,
+      dur: MOCAP[src].dur * (o.dur || 1),
+      keys: mocapKeys(src, o),
+      loco: true,
+      run: !!run,
+      ground: true,
+      mocap: src,
+    };
+  };
+  loco('walk', 'xbot_walk');
+  loco('walk_m', 'soldier_walk');
+  loco('walk_f', 'xbot_walk', 'fem');
+  loco('walk_heels', 'xbot_walk', 'heels');
+  loco('walk_old', 'soldier_walk', 'old');
+  loco('walk_brisk', 'soldier_walk', 'brisk');
+  loco('jog', 'soldier_run', { dur: 1.18, amp: { legs: 0.78, feet: 0.85, arms: 0.75 } }, true);
+  loco('run', 'xbot_run', null, true);
+  loco('sprint', 'soldier_run', { dur: 0.92, amp: { legs: 1.1, arms: 1.15 } }, true);
+  // captured standing idles (breathing, small weight shifts): the base idle and its mirrored twin are two different takes
+  const idle = (name, src, o) => {
+    C[name] = {
+      name,
+      dur: MOCAP[src].dur * (o.dur || 1),
+      keys: mocapKeys(src, { hands: HANDS_RELAX, ...o }),
+      ground: true,
+      mocap: src,
+    };
+  };
+  idle('idle', 'xbot_idle', {});
+  idle('idle_m', 'soldier_idle', { mirror: true, dur: 1.15 });
 }
 
 // ------------------------------------------------------------------ idles and poses
@@ -1444,6 +1634,7 @@ export function canonicalClips() {
   // mirrored variants keep crowds from looking cloned
   for (const n of ['idle', 'cross_arms', 'phone_text', 'talk_g', 'drink', 'idle_f'])
     C[n + '_m'] = { ...C[n], name: n + '_m', keys: C[n].keys.map(mirrorKey) };
+  if (MOCAP_ON) addMocapClips(C);
   return C;
 }
 
@@ -1594,6 +1785,7 @@ export function bindClip(rig, F, c, hipH) {
     prop: c.prop || null,
     seat: c.seat || 0,
     wall: c.wall || 0,
+    mocap: c.mocap || null,
   };
   return clip;
 }
@@ -1622,7 +1814,8 @@ export function groundAndSpeed(rig, F, clip, restFoot) {
   const N = clip.userData.loco ? 48 : Math.min(64, hipsTrack ? hipsTrack.times.length * 3 : 16);
   const feet = ['Left', 'Right'].map((s) => [rig.bones[s + 'Foot'], rig.bones[s + 'ToeBase']]);
   const lows = [],
-    fz = [[], []];
+    fz = [[], []],
+    ank = [[], []];
   const inv = new THREE.Matrix4().copy(rig.root.matrixWorld).invert();
   for (let i = 0; i < N; i++) {
     const t = (i / N) * clip.duration;
@@ -1635,6 +1828,7 @@ export function groundAndSpeed(rig, F, clip, restFoot) {
       const h = Math.min(a.y - restFoot.ankle, b.y - restFoot.toe);
       low = Math.min(low, h);
       fz[s].push([t, Math.min(a.y - restFoot.ankle, b.y - restFoot.toe), (a.z + b.z) / 2]);
+      ank[s].push(a.y, a.z);
     });
     lows.push([t, low]);
   }
@@ -1683,6 +1877,25 @@ export function groundAndSpeed(rig, F, clip, restFoot) {
         }
       }
     clip.userData.speed = cnt ? Math.max(0.3, sum / cnt) : 1.3;
+    // captured cycles: the speed of the flat foot at mid-stance (the lower ankle, under the body), where sliding shows
+    // most. The planted-band average above undercounts captured gaits with soft heel / toe rolls (seniors: 0.36 vs 0.87 m/s)
+    if (clip.userData.mocap) {
+      let ms = 0;
+      let mn = 0;
+      for (let i = 0; i < N; i++) {
+        const j = (i + 1) % N;
+        for (let s = 0; s < 2; s++) {
+          const o = 1 - s;
+          const y = ank[s][i * 2];
+          const z = ank[s][i * 2 + 1];
+          if (y < ank[o][i * 2] - 0.01 && Math.abs(z) < 0.1) {
+            ms += -(ank[s][j * 2 + 1] - z) / (clip.duration / N);
+            mn++;
+          }
+        }
+      }
+      if (mn >= 4 && ms / mn > 0.3) clip.userData.speed = ms / mn;
+    }
   }
 }
 

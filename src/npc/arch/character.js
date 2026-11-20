@@ -16,6 +16,7 @@ import {
   makeShoeMaterial,
 } from './materials.js';
 import { PERSONAS } from '../personality.js';
+import { createNpcJiggle } from '../people/jiggle.js';
 const _gL = new THREE.Vector3(),
   _gR = new THREE.Vector3();
 const R4GAIT = !(typeof location !== 'undefined' && /[?&]r4gait=0/.test(location.search));
@@ -351,6 +352,20 @@ export function createNpc(game, opts = {}) {
   model.traverse((o) => {
     if (o.isBone) bones[o.name.replace(/^mixamorig[:_]?/, '')] = o;
   });
+  // Nov 19b: subtle chest / glute secondary motion for the women among the user's people, near and at full detail only
+  // (src/npc/people/jiggle.js; costs nothing farther away)
+  const jigMesh =
+    isPerson && meta.gender === 'f'
+      ? lods[0].find((m) => m.isSkinnedMesh && /_body/.test(m.name))
+      : null;
+  const jig = jigMesh
+    ? createNpcJiggle(game, {
+        mesh: jigMesh,
+        template: base.meshes?.[jigMesh.name] || null,
+        hips: bones.Hips || null,
+        root,
+      })
+    : null;
   const headBone = bones.Head,
     handR = bones.RightHand,
     handL = bones.LeftHand;
@@ -843,6 +858,7 @@ export function createNpc(game, opts = {}) {
     const mdt = st.accum;
     mixer.update(st.accum);
     st.accum = 0;
+    if (jig) jig.update(mdt, d, cur);
     // r4-anim: planted-foot feedback. The clip's measured stride speed can be off for a body (shared clips rescaled by hip
     // height only; one test walker's stance foot moved back at 0.8-1.04 m/s at 1.35 m/s walking; the measure is not conclusive yet).
     // While walking steadily, the stance foot's backward speed under the body is compared with the body's real speed and
@@ -1053,6 +1069,7 @@ export function createNpc(game, opts = {}) {
         }
       });
       if (body && !body.userData.shared) body.dispose();
+      if (jig) jig.dispose();
     },
     snapshotPose(dur = 0.35) {
       const arr = [];

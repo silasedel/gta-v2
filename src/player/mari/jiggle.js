@@ -30,8 +30,9 @@ const smooth = (a, b, x) => {
   return t * t * (3 - 2 * t);
 };
 
-// Weights from the rest pose, in the character's root frame (feet at y 0, facing +Z).
-function paintWeights(mesh, albedo) {
+// Weights from the rest pose, in the character's root frame (feet at y 0, facing +Z). Also used by the women NPCs
+// (src/npc/people/jiggle.js).
+export function paintWeights(mesh, albedo) {
   const g = mesh.geometry;
   const pos = g.attributes.position;
   const uv = g.attributes.uv;
