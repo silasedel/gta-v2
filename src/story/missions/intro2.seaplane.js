@@ -54,6 +54,29 @@ function placePlane(ctx, at, y, speed, heading) {
   S.ctl.throttle = speed > 20 ? 0.75 : 0.1;
 }
 
+// the camera rides low off the plane's left wing, then drops behind it (positions follow the plane every frame)
+function liftoff(ctx) {
+  const A = aircraft(ctx);
+  const at = (side, back, up) => () => {
+    const p = A?.mesh?.position;
+    if (!p) return [0, 0, 0];
+    const h = A.S ? Math.atan2(2 * (A.S.q.w * A.S.q.y), 1 - 2 * A.S.q.y * A.S.q.y) : 0;
+    const fx = Math.sin(h);
+    const fz = Math.cos(h);
+    return [p.x - fx * back + fz * side, p.y + up, p.z - fz * back - fx * side];
+  };
+  return {
+    id: 'intro2.seaplane.liftoff',
+    fadeIn: false,
+    fadeOut: false,
+    shots: [
+      { dur: 2.6, mm: 32, from: { pos: at(14, 6, 1), look: 'vehicle:plane' }, handheld: 0.7 },
+      { dur: 2.4, mm: 40, from: { pos: at(2, 24, 5), look: 'vehicle:plane' }, handheld: 0.5 },
+    ],
+    lines: [{ at: 0.4, who: 'Cisco', text: 'She flies! Head south-east, Key Largo.', ms: 2600 }],
+  };
+}
+
 function paid(ctx) {
   const m = ctx.data.marina.spots;
   return {
@@ -180,6 +203,8 @@ export default defineMission({
           Math.PI / 2,
         ),
     },
+    // a short chase shot as she climbs away from the slough (storyboard panel 12)
+    { id: 'liftoff', cutscene: liftoff },
     {
       id: 'fly',
       text: 'Fly back to the dock on Key Largo.',

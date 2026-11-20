@@ -253,6 +253,20 @@ export async function spawnBale(ctx, i, at) {
     },
   );
   if (obj) {
+    // wet plastic wrap: a glossy copy of the bundle's material (shared by all the bales of this mission)
+    ctx.data.baleMat ||= new Map();
+    obj.traverse((o) => {
+      if (!o.isMesh || !o.material) return;
+      let m = ctx.data.baleMat.get(o.material);
+      if (!m) {
+        m = o.material.clone();
+        m.roughness = Math.min(m.roughness ?? 1, 0.28);
+        m.envMapIntensity = 1.4;
+        ctx.data.baleMat.set(o.material, m);
+        ctx.track(m, () => m.dispose());
+      }
+      o.material = m;
+    });
     obj.rotation.y = i * 1.7;
     obj.userData.bob = { t: i * 1.3, y: sea - 0.18 };
   }

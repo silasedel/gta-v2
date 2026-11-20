@@ -134,9 +134,11 @@ export async function buildSwampCamp(game, at) {
   const H = 2.5; // wall height
   const T = 0.12; // wall thickness
   // stilts
+  const stilts = [];
   for (const sx of [-9, -6, -3]) {
     for (const sz of [-8.5, -6.5, -4, -1.5]) {
-      S.box(darkWood, sx - 0.1, -0.4, sz - 0.1, sx + 0.1, FY, sz + 0.1);
+      S.solid(sx - 0.1, -0.4, sz - 0.1, sx + 0.1, FY, sz + 0.1);
+      stilts.push([sx, sz]);
     }
   }
   // floor + porch deck
@@ -170,9 +172,8 @@ export async function buildSwampCamp(game, at) {
   // inside: a chair in the middle (Cisco), a table with a lantern, crates
   // the post Cisco is tied to (he sits on the floor against it)
   S.box(darkWood, -6.2, FY, -2.75, -6.0, FY + H, -2.55);
-  S.box(planks, -8.6, FY, -3.2, -7.4, FY + 0.78, -2.0);
-  S.box(bulb, -8.1, FY + 0.82, -2.7, -7.96, FY + 1.02, -2.56, { collide: false });
-  S.box(planks, -4.2, FY, -2.6, -3.3, FY + 0.6, -1.7);
+  S.solid(-8.6, FY, -3.2, -7.4, FY + 0.78, -2.0);
+  S.cyl(bulb, -8.03, FY + 0.92, -2.63, 0.06, 0.16, { seg: 10 });
   // the porch lamp (a warm bulb beside the door) and the lantern inside
   S.box(bulb, -4.9, FY + 2.0, -6.62, -4.74, FY + 2.18, -6.52, { collide: false });
   lights.push(S.light(-4.82, FY + 1.95, -7.0, 0xffad5c, 9, 11));
@@ -190,29 +191,11 @@ export async function buildSwampCamp(game, at) {
 
   // --- the camp fire: a ring of stones, logs, embers
   const FIRE = { x: 1.5, z: 3 };
-  for (let i = 0; i < 9; i++) {
-    const a = (i / 9) * Math.PI * 2;
-    S.rbox(
-      darkWood,
-      FIRE.x + Math.cos(a) * 0.7,
-      0.1,
-      FIRE.z + Math.sin(a) * 0.7,
-      0.3,
-      0.2,
-      0.25,
-      a,
-    );
-  }
-  S.rbox(darkWood, FIRE.x, 0.18, FIRE.z, 1.2, 0.16, 0.16, 0.4);
-  S.rbox(darkWood, FIRE.x, 0.22, FIRE.z, 1.1, 0.15, 0.15, 2.1);
   const embers = S.glow(0xff7a2a, 5);
-  S.rbox(embers, FIRE.x, 0.12, FIRE.z, 0.6, 0.05, 0.6, 0.3);
+  S.rbox(embers, FIRE.x, 0.06, FIRE.z, 0.55, 0.03, 0.55, 0.3);
   const fireLight = S.light(FIRE.x, 1.0, FIRE.z, 0xff8a3a, 10, 12);
   lights.push(fireLight);
   flicker.push({ l: fireLight, base: 10, k: 0.35 });
-  // log benches by the fire
-  S.rbox(planks, FIRE.x - 2.6, 0.22, FIRE.z, 0.4, 0.44, 2.2, 0.2);
-  S.rbox(planks, FIRE.x + 1.6, 0.22, FIRE.z + 2.4, 2.2, 0.44, 0.4, 0.3);
 
   // --- the landing (north shore) and the far dock (south shore): plank walkways on piles out over the water
   // a pier from shore point p along the axis (dx, dz) for len meters, w wide
@@ -336,6 +319,85 @@ export async function buildSwampCamp(game, at) {
   );
   const cashObj = await loads[loads.length - 2].catch(() => null);
   await Promise.all(loads.map((p) => p.catch(() => null)));
+  // ---------------------------------------------------------------- round, textured details (no boxes)
+  const bark = ownMat(barkTexture(), 1.2, { rough: 0.95 });
+  bark.userData.meters = 1;
+  const logGeo = new THREE.CylinderGeometry(1, 1, 1, 12, 1);
+  own.geometries.push(logGeo);
+  // a round log / post: center, radius, length, yaw (about y), tilt (from vertical; PI/2 = lying)
+  function log(x, y, z, r, len, yaw = 0, tilt = Math.PI / 2) {
+    const m = new THREE.Mesh(logGeo, bark);
+    m.position.set(C.x + x, y, C.z + z);
+    m.scale.set(r, len, r);
+    m.rotation.set(0, yaw, 0, 'YXZ');
+    m.rotateX(tilt);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    group.add(m);
+    return m;
+  }
+  // the shack's stilts: rough posts
+  for (const [sx, sz] of stilts)
+    log(sx, y0 + (FY - 0.4) / 2 - 0.2, sz, 0.11, FY + 0.4, sx * 0.3, 0);
+  // the camp fire: a ring of mossy stones, crossed logs, flames
+  const stone = await loadModel('everglades/mossy_stone.glb');
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2;
+    if (!stone) break;
+    const m = stone.clone(true);
+    m.position.set(C.x + FIRE.x + Math.cos(a) * 0.75, y0 - 0.05, C.z + FIRE.z + Math.sin(a) * 0.75);
+    m.scale.setScalar(0.17 + random() * 0.06);
+    m.rotation.y = random() * 6;
+    group.add(m);
+  }
+  for (let i = 0; i < 4; i++) {
+    log(FIRE.x, y0 + 0.16, FIRE.z, 0.07, 1.0, (i / 4) * Math.PI + 0.3, Math.PI / 2 - 0.35);
+  }
+  const flameTex = flameTexture();
+  own.textures.push(flameTex);
+  const flameMat = new THREE.MeshBasicMaterial({
+    map: flameTex,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    color: 0xffb070,
+  });
+  own.materials.push(flameMat);
+  const flameGeo = new THREE.PlaneGeometry(0.9, 1.1);
+  flameGeo.translate(0, 0.55, 0);
+  own.geometries.push(flameGeo);
+  const flames = [];
+  for (let k = 0; k < 3; k++) {
+    const f = new THREE.Mesh(flameGeo, flameMat);
+    f.position.set(C.x + FIRE.x, y0 + 0.12, C.z + FIRE.z);
+    f.rotation.y = (k / 3) * Math.PI;
+    f.renderOrder = 4;
+    group.add(f);
+    flames.push(f);
+  }
+  // log benches by the fire
+  log(FIRE.x - 2.6, y0 + 0.2, FIRE.z, 0.2, 2.3, 0.2);
+  log(FIRE.x + 1.6, y0 + 0.2, FIRE.z + 2.4, 0.2, 2.3, Math.PI / 2 + 0.3);
+  // inside the shack: a boarded crate as the table, a wooden crate in the corner, a rope coil by Cisco's post
+  for (const [id, lx, ly, lz, yaw, sc] of [
+    ['crate_mossy_boarded', -8.0, FY, -2.6, 0.1, 1.5],
+    ['crate_wood', -3.8, FY, -2.1, 1.4, 1.6],
+    ['rope_coil', -5.5, FY, -2.4, 0.4, 1.2],
+    ['crate_mossy', 2.2, 0, -12.4, 0.5, 1.4],
+    ['crate_mossy_open', 13.5, 0, 2.6, 2.2, 1.4],
+  ]) {
+    try {
+      const m = await loadMissionProp(id);
+      m.position.set(C.x + lx, y0 + ly, C.z + lz);
+      m.rotation.y = yaw;
+      m.scale.setScalar(sc);
+      group.add(m);
+    } catch (e) {
+      /* a missing prop just stays out */
+    }
+  }
+
   // trampled mud in the yard and along the trails
   const mudTex = mudTexture();
   own.textures.push(mudTex);
@@ -429,6 +491,124 @@ export async function buildSwampCamp(game, at) {
       instanced.push(im);
     }
     for (const t of trees) addCylinder(t.x, t.y, t.z, 0.32 * t.s, 4);
+  }
+
+  // ---------------------------------------------------------------- the forest floor: roots, cypress knees, leaf litter,
+  // puddles (the yard is never a flat plain)
+  const rootGeo = new THREE.CylinderGeometry(0.6, 1, 1, 7, 1);
+  rootGeo.rotateZ(Math.PI / 2);
+  rootGeo.translate(0.5, 0, 0);
+  own.geometries.push(rootGeo);
+  const kneeGeo = new THREE.ConeGeometry(1, 1, 7, 1);
+  kneeGeo.translate(0, 0.5, 0);
+  own.geometries.push(kneeGeo);
+  const near = trees.filter((t) => (t.x - C.x) ** 2 + (t.z - C.z) ** 2 < 60 * 60);
+  const roots = new THREE.InstancedMesh(rootGeo, bark, near.length * 6);
+  const knees = new THREE.InstancedMesh(kneeGeo, bark, near.length * 5);
+  {
+    const M = new THREE.Matrix4();
+    const Q = new THREE.Quaternion();
+    const E = new THREE.Euler();
+    const V = new THREE.Vector3();
+    const Sc = new THREE.Vector3();
+    let nr = 0;
+    let nk = 0;
+    for (const t of near) {
+      for (let k = 0; k < 6; k++) {
+        // buttress roots fanning out from the trunk, dipping into the mud
+        const a = (k / 6) * Math.PI * 2 + random() * 0.6;
+        E.set(0, -a, -0.12 - random() * 0.12, 'YXZ');
+        Q.setFromEuler(E);
+        const len = (1.4 + random() * 1.8) * (t.s / 2);
+        const r = 0.16 * t.s;
+        M.compose(V.set(t.x, t.y + 0.1, t.z), Q, Sc.set(len, r, r));
+        roots.setMatrixAt(nr++, M);
+      }
+      for (let k = 0; k < 5; k++) {
+        // knees poke up out of the mud around the tree
+        const a = random() * Math.PI * 2;
+        const d = 1.6 + random() * 3.5;
+        const x = t.x + Math.cos(a) * d;
+        const z = t.z + Math.sin(a) * d;
+        const h = 0.25 + random() * 0.55;
+        E.set((random() - 0.5) * 0.2, random() * 6, (random() - 0.5) * 0.2);
+        Q.setFromEuler(E);
+        const gy = isWater(x, z) ? sea : ground(x, z);
+        M.compose(V.set(x, gy - 0.05, z), Q, Sc.set(0.09 + h * 0.12, h, 0.09 + h * 0.12));
+        knees.setMatrixAt(nk++, M);
+      }
+    }
+    roots.count = nr;
+    knees.count = nk;
+  }
+  for (const im of [roots, knees]) {
+    im.castShadow = true;
+    im.receiveShadow = true;
+    im.computeBoundingSphere();
+    group.add(im);
+    instanced.push(im);
+  }
+  // leaf litter and needles over the yard mud, and puddles that hold the sky
+  const leafTex = leafTexture();
+  own.textures.push(leafTex);
+  const leafMat = new THREE.MeshStandardMaterial({
+    map: leafTex,
+    transparent: true,
+    depthWrite: false,
+    roughness: 0.9,
+    polygonOffset: true,
+    polygonOffsetFactor: -3,
+    polygonOffsetUnits: -6,
+  });
+  leafMat.defines = { NO_WET: '' };
+  own.materials.push(leafMat);
+  const leafGeo = new THREE.PlaneGeometry(9, 9);
+  leafGeo.rotateX(-Math.PI / 2);
+  own.geometries.push(leafGeo);
+  for (let i = 0; i < 16; i++) {
+    const a = random() * Math.PI * 2;
+    const r = 4 + random() * (CLEAR_R + 4);
+    const m = new THREE.Mesh(leafGeo, leafMat);
+    const x = C.x + Math.cos(a) * r;
+    const z = C.z + Math.sin(a) * r;
+    m.position.set(x, ground(x, z) + 0.045, z);
+    m.rotation.y = random() * 6;
+    m.receiveShadow = true;
+    m.renderOrder = 1;
+    group.add(m);
+  }
+  const puddleTex = puddleTexture();
+  own.textures.push(puddleTex);
+  const puddleMat = new THREE.MeshStandardMaterial({
+    color: 0x1a1c15,
+    alphaMap: puddleTex,
+    transparent: true,
+    opacity: 0.85,
+    depthWrite: false,
+    roughness: 0.14,
+    metalness: 0,
+    envMapIntensity: 0.3,
+    polygonOffset: true,
+    polygonOffsetFactor: -4,
+    polygonOffsetUnits: -8,
+  });
+  puddleMat.defines = { NO_WET: '' };
+  own.materials.push(puddleMat);
+  const puddleGeo = new THREE.PlaneGeometry(1, 1);
+  puddleGeo.rotateX(-Math.PI / 2);
+  own.geometries.push(puddleGeo);
+  for (let i = 0; i < 14; i++) {
+    const a = random() * Math.PI * 2;
+    const r = 3 + random() * (CLEAR_R + 6);
+    const x = C.x + Math.cos(a) * r;
+    const z = C.z + Math.sin(a) * r;
+    if (path(x, z) && random() < 0.5) continue;
+    const m = new THREE.Mesh(puddleGeo, puddleMat);
+    m.position.set(x, ground(x, z) + 0.05, z);
+    m.scale.set(1.5 + random() * 3, 1, 1 + random() * 2);
+    m.rotation.y = random() * 6;
+    m.renderOrder = 2;
+    group.add(m);
   }
 
   // ---------------------------------------------------------------- live oaks around the yard (the vegetation library)
@@ -654,6 +834,12 @@ export async function buildSwampCamp(game, at) {
   let t = 0;
   function update(dt) {
     t += dt;
+    for (let k = 0; k < flames.length; k++) {
+      const f = flames[k];
+      f.scale.set(0.85 + Math.sin(t * 9 + k) * 0.12, 0.8 + Math.sin(t * 13.7 + k * 2) * 0.25, 1);
+      const cam = game.camera?.position;
+      if (cam) f.rotation.y = Math.atan2(cam.x - f.position.x, cam.z - f.position.z) + k * 0.9;
+    }
     for (const f of flicker) {
       f.l.intensity =
         f.base * (1 + Math.sin(t * 13.1) * f.k * 0.4 + Math.sin(t * 7.3 + 1.3) * f.k * 0.35);
@@ -921,6 +1107,131 @@ function tinTexture(base, seed, rust = 0.5) {
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
+}
+
+// bald cypress bark: grey-brown vertical fissures, darker wet base (repeats every meter)
+function barkTexture() {
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 256;
+  const g = c.getContext('2d');
+  const r = rng(61);
+  g.fillStyle = 'rgb(92, 78, 64)';
+  g.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 90; i++) {
+    const x = r() * 256;
+    const w = 2 + r() * 7;
+    const shade = 50 + r() * 70;
+    g.fillStyle = `rgba(${shade | 0}, ${(shade * 0.86) | 0}, ${(shade * 0.7) | 0}, 0.8)`;
+    g.beginPath();
+    g.moveTo(x, 0);
+    for (let y = 0; y <= 256; y += 32) g.lineTo(x + Math.sin(y * 0.05 + i) * 4, y);
+    g.lineTo(x + w, 256);
+    g.lineTo(x + w, 0);
+    g.fill();
+  }
+  for (let i = 0; i < 40; i++) {
+    g.fillStyle = `rgba(70, 92, 48, ${0.1 + r() * 0.25})`;
+    g.beginPath();
+    g.ellipse(r() * 256, r() * 256, 6 + r() * 20, 3 + r() * 10, 0, 0, Math.PI * 2);
+    g.fill();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+// one flame tongue: hot core, orange edges, soft top (additive)
+function flameTexture() {
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 128;
+  const g = c.getContext('2d');
+  const gr = g.createRadialGradient(32, 110, 2, 32, 90, 60);
+  gr.addColorStop(0, 'rgba(255, 245, 200, 1)');
+  gr.addColorStop(0.25, 'rgba(255, 170, 60, 0.9)');
+  gr.addColorStop(0.6, 'rgba(200, 70, 20, 0.35)');
+  gr.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  g.fillStyle = gr;
+  g.beginPath();
+  g.moveTo(8, 128);
+  g.quadraticCurveTo(0, 60, 30, 0);
+  g.quadraticCurveTo(46, 50, 58, 30);
+  g.quadraticCurveTo(66, 90, 56, 128);
+  g.fill();
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+// fallen cypress needles, oak leaves and twigs on transparent ground
+function leafTexture() {
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = 512;
+  const g = c.getContext('2d');
+  const r = rng(77);
+  for (let i = 0; i < 900; i++) {
+    const x = 256 + (r() - 0.5) * 480 * Math.sqrt(r());
+    const y = 256 + (r() - 0.5) * 480 * Math.sqrt(r());
+    const kind = r();
+    const hue = r();
+    const col =
+      hue < 0.5
+        ? `rgba(${(120 + r() * 50) | 0}, ${(70 + r() * 30) | 0}, 30, 0.9)`
+        : hue < 0.8
+          ? `rgba(${(90 + r() * 30) | 0}, ${(80 + r() * 30) | 0}, 40, 0.9)`
+          : `rgba(60, ${(70 + r() * 30) | 0}, 35, 0.9)`;
+    g.save();
+    g.translate(x, y);
+    g.rotate(r() * 6.3);
+    if (kind < 0.55) {
+      g.fillStyle = col;
+      g.beginPath();
+      g.ellipse(0, 0, 5 + r() * 5, 2.5 + r() * 2, 0, 0, Math.PI * 2);
+      g.fill();
+    } else if (kind < 0.9) {
+      g.strokeStyle = col;
+      g.lineWidth = 1;
+      g.beginPath();
+      g.moveTo(-6, 0);
+      g.lineTo(6, 0);
+      g.stroke();
+    } else {
+      g.strokeStyle = 'rgba(70, 55, 40, 0.9)';
+      g.lineWidth = 2;
+      g.beginPath();
+      g.moveTo(-18, 0);
+      g.lineTo(18, 2);
+      g.stroke();
+    }
+    g.restore();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+// an irregular puddle outline (alpha only)
+function puddleTexture() {
+  const c = document.createElement('canvas');
+  c.width = 128;
+  c.height = 128;
+  const g = c.getContext('2d');
+  const r = rng(13);
+  g.fillStyle = '#000';
+  g.fillRect(0, 0, 128, 128);
+  for (let i = 0; i < 9; i++) {
+    const x = 64 + (r() - 0.5) * 50;
+    const y = 64 + (r() - 0.5) * 50;
+    const rad = 14 + r() * 26;
+    const gg = g.createRadialGradient(x, y, rad * 0.5, x, y, rad);
+    gg.addColorStop(0, '#fff');
+    gg.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gg;
+    g.fillRect(0, 0, 128, 128);
+  }
+  return new THREE.CanvasTexture(c);
 }
 
 // dark wet mud, soft-edged (a disc / strip texture: alpha falls off toward the border)

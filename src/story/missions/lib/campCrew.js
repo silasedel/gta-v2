@@ -41,6 +41,16 @@ export function createCampCrew(ctx, opts) {
   let alerted = false;
   let suspicion = 0;
 
+  // one muzzle-flash light shared by the crew (a short warm pop where a gun fires; never more than one)
+  const flash = new THREE.PointLight(0xffc27a, 0, 9, 2);
+  flash.castShadow = false;
+  game.scene.add(flash);
+  let flashT = 0;
+  ctx.track(flash, () => {
+    flash.parent?.remove(flash);
+    flash.dispose?.();
+  });
+
   for (let i = 0; i < opts.posts.length; i++) addMember(opts.posts[i], i);
 
   // a member at his post: { x, z, face (heading), poacher?, gun? }
@@ -198,6 +208,9 @@ export function createCampCrew(ctx, opts) {
       if (G?.tracer) G.tracer(_a.clone(), _b.clone(), { speed: 380 });
       _d.subVectors(_b, _a).normalize();
       game.fx?.muzzleFlash?.(_a.clone(), _d.clone());
+      flash.position.copy(_a);
+      flash.intensity = 14;
+      flashT = 0.07;
       game.audio?.play?.('pistol', { position: { x: _a.x, y: _a.y, z: _a.z }, volume: 0.85 });
     } catch (e) {
       /* fx are optional */
@@ -230,6 +243,10 @@ export function createCampCrew(ctx, opts) {
 
   // ---------------------------------------------------------------- every frame
   function update(dt) {
+    if (flashT > 0) {
+      flashT -= dt;
+      if (flashT <= 0) flash.intensity = 0;
+    }
     let best = 0;
     for (const m of members) {
       if (m.dead) continue;

@@ -12,6 +12,8 @@
 //   --settle 2.5      seconds a step runs before the auto-play acts (default 2)
 //   --force 30        seconds a step WITHOUT an auto(ctx) hook may run before the driver calls ctx.next() (reported)
 //   --max 2400        hard time limit of the run in seconds
+//   --hang 12         minutes the page may stop answering (a software-GL stall) before the run fails
+//   --w 1280 --h 720  window size (1600 x 900 with --shots)
 // Report: docs/v2/reports/intro2-play[-<tag>].json (missions, steps, fails, console errors, pass / fail).
 // macOS has no `timeout`: perl -e 'alarm shift; exec @ARGV' 2400 node tools/v2/story/intro2_play.mjs
 import fs from 'node:fs';
@@ -28,6 +30,7 @@ for (let i = 0; i < args.length; i++) {
 const SHOTS = !!o.shots;
 const WATCH = +(o.watch ?? (SHOTS ? 7 : 3));
 const SETTLE = +(o.settle ?? 2);
+const HANG_MAX = +(o.hang ?? 12); // ticks of 60 s without an answer before the run counts the page as hung
 const FORCE = +(o.force ?? 30); // s a step without an auto hook may run before it is forced
 const MAX = +(o.max ?? 2400);
 const TAG = o.tag ? '-' + o.tag : '';
@@ -42,7 +45,7 @@ const DRIVER = `(() => {
   const log = [];
   const I = (window.__i2 = { log, stepT: 0, lastKey: '', acted: 0 });
   for (const ev of ['mission:start', 'mission:step', 'mission:pass', 'mission:fail', 'mission:quit', 'cutscene:start', 'cutscene:end']) {
-    game.on(ev, (d) => log.push({ ev, t: Math.round(performance.now()), ...(d || {}) }));
+    game.on(ev, (d) => log.push({ ev, t: Math.round(performance.now()), heapMB: Math.round((performance.memory?.usedJSHeapSize || 0) / 1e6), ...(d || {}) }));
   }
   const pos = (ctx, x) => ctx.pos(x);
   function pressE() {
@@ -191,7 +194,9 @@ const report = {
   ok: false,
 };
 
-await withBrowser({ width: 1600, height: 900, maxSeconds: MAX + 300 }, async (b) => {
+const W = +(o.w ?? (SHOTS ? 1600 : 1280));
+const H = +(o.h ?? (SHOTS ? 900 : 720));
+await withBrowser({ width: W, height: H, maxSeconds: MAX + 300 }, async (b) => {
   const T0 = Date.now();
   const lg = (m) => console.log(`[${Math.round((Date.now() - T0) / 1000)}s] ${m}`);
   await b.goto('http://127.0.0.1:5200/?mute&intro=1');
@@ -200,6 +205,15 @@ await withBrowser({ width: 1600, height: 900, maxSeconds: MAX + 300 }, async (b)
   lg('game started');
   b.errors.length = 0;
   await b.eval(DRIVER);
+  // a renderer that dies (out of memory) never answers again: notice it
+  let crashed = false;
+  b.on((method) => {
+    if (method === 'Inspector.targetCrashed') {
+      crashed = true;
+      lg('RENDERER CRASHED');
+    }
+  });
+  await b.send('Inspector.enable').catch(() => null);
   // the start: a fresh story (Restart Story + Play) or the missions before --from skipped
   if (o.from) {
     await b.eval(`(async () => {
@@ -243,7 +257,13 @@ await withBrowser({ width: 1600, height: 900, maxSeconds: MAX + 300 }, async (b)
         report.hang = stack;
         lg('hang stack: ' + JSON.stringify(stack).slice(0, 1500));
       }
-      if (++hung >= 4) {
+      // a software-GL test browser can stall for minutes on a big teleport (shader compiles for a whole new area):
+      // wait it out, fail only when it never comes back
+      if (crashed) {
+        report.fails.push({ id: 'page', reason: 'the renderer crashed (out of memory?)' });
+        break;
+      }
+      if (++hung >= HANG_MAX) {
         report.fails.push({ id: 'page', reason: 'the page stopped answering' });
         break;
       }
@@ -299,7 +319,11 @@ await withBrowser({ width: 1600, height: 900, maxSeconds: MAX + 300 }, async (b)
     }
     for (const e of evs) {
       const m = (report.missions[e.id] ||= { steps: [], passed: false, fails: 0 });
-      if (e.ev === 'mission:start') m.start = e.t;
+      if (e.ev === 'mission:start') {
+        m.start = e.t;
+        m.heapMB = e.heapMB;
+        lg(`START ${e.id} heap ${e.heapMB} MB`);
+      }
       if (e.ev === 'mission:step') m.steps.push(e.name ?? e.step);
       if (e.ev === 'mission:pass') {
         m.passed = true;
