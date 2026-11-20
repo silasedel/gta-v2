@@ -32,7 +32,10 @@ function fromGraph(g, city) {
       a: e.a,
       b: e.b,
       pts: e.pts.map((p) => [p[0], p[1]]),
-      y: e.y || null,
+      // Nov 19 (hovering cars): only decks (bridges, ramps) and terrain-following roads carry real heights; a flat street's
+      // y is all zeros, and ghost traffic glided at y = 0 where the ground sits lower (1.2 m above the road downtown at
+      // (300, -62)). Without y the lane height comes from city.groundHeightAt.
+      y: e.elevated === false && !e.terrain ? null : e.y || null,
       width: e.width || 7,
       lanesFwd: e.lanesFwd ?? 1,
       lanesBack: e.oneway ? 0 : (e.lanesBack ?? 1),

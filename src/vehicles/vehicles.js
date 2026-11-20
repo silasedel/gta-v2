@@ -3106,6 +3106,7 @@ export async function createVehicles(game) {
     v.ghost = true;
     v.frozen = false;
     v.ghostSpeed = Math.max(0, v.speed || 8);
+    restWheels(v);
     v.hitCd = 0.6;
     v.ai.next = null;
     v.ai.deadEnd = false;
@@ -3236,6 +3237,13 @@ export async function createVehicles(game) {
     }
     try {
       v.body.setEnabled(false);
+  // Nov 19 (user: "a car was hovering because its wheels were inside it"): without a controller (ghost and frozen cars)
+  // nothing moves the drawn wheels, so they kept their last pose (often the body origin, see the wheel loop) and the
+  // far LOD baked that pose. Put them at the static ride height instead: the tires stand on the ground under the body.
+  function restWheels(v) {
+    const rest = v.groundOff - v.spec.r;
+    for (const w of v.car?.wheels || []) w.steer.position.set(w.x, -rest, w.z);
+  }
     } catch (e) {
       /* old rapier */
     }
@@ -3247,6 +3255,7 @@ export async function createVehicles(game) {
       new RAPIER.Ray({ x, y: y + 2.5, z }, { x: 0, y: -1, z: 0 }),
       7,
       true,
+    restWheels(v);
       QF.EXCLUDE_DYNAMIC | QF.EXCLUDE_KINEMATIC | QF.EXCLUDE_SENSORS,
     );
     return !!gh;
@@ -3672,7 +3681,10 @@ export async function createVehicles(game) {
       if (vc && !v.car.isFar)
         for (let i = 0; i < 4; i++) {
           const w = v.car.wheels[i];
-          const sl = vc.wheelSuspensionLength(i) ?? v.restLen;
+          // Rapier reports 0 before the car's first physics step: drawn as is, the wheels sat at the body origin, tucked
+          // up into the arches, and the far LOD baked them there (the "hovering car with its wheels inside it")
+          const raw = vc.wheelSuspensionLength(i);
+          const sl = raw > 0.01 ? raw : v.groundOff - v.spec.r;
           w.steer.position.set(w.x, -sl, w.z);
           {
             const sa = vc.wheelSteering(i) || 0,
