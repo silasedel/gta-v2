@@ -39,6 +39,7 @@ export function createEngine(game, opts = {}) {
   const { scene, world, RAPIER } = game,
     city = game.city || {},
     list = [],
+    pins = new Set(),
     byKey = new Map(),
     claimed = new WeakSet();
   const state = (game.interiorState ||= new Map()); // key -> persisted per-store state
@@ -656,6 +657,7 @@ export function createEngine(game, opts = {}) {
       if (prevBR) prevBR.call(this, r, sc, cam, ...rest);
     };
   }
+  const pinnedDist = (s) => (s.dist <= ACTIVE_R && pins.has(s.sf?.id) ? s.dist - 60 : s.dist);
   function inner(dt) {
     const P = game.player;
     if (!P) return;
@@ -679,7 +681,8 @@ export function createEngine(game, opts = {}) {
       );
     }
     for (const s of nearList) s.dist = Math.hypot(pp.x - s.center.x, pp.z - s.center.z);
-    nearList.sort((a, b) => a.dist - b.dist);
+    // story pins (intro v2 robbery, Nov 19): a pinned lot takes an active slot before closer ones (still within ACTIVE_R)
+    nearList.sort((a, b) => pinnedDist(a) - pinnedDist(b));
     // a lot the city never cut a shell for (overlapping / upper-level / part footprints: no h / doorX / doorW stamp) can never be
     // built: it must not hold one of the MAX_ACTIVE slots, or the real shop next to it waits forever (a store that never loads)
     const wanted = [];
@@ -1002,6 +1005,11 @@ export function createEngine(game, opts = {}) {
   }
   ingest();
   const api = {
+    // keep a storefront's interior loaded while a mission needs it (pin(id, true) ... pin(id, false))
+    pin(id, on = true) {
+      if (on) pins.add(id);
+      else pins.delete(id);
+    },
     list,
     byKey,
     update,

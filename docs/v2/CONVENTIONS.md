@@ -56,6 +56,12 @@ Write code the way shipped game codebases read, not dense one-liners:
   cameras: `node tools/v2/keys/shots.mjs --set X [--spots tools/v2/keys/spots_refs.json] [--ab "&keys=0"]`; `?keys=0` = before.
 - **School:** `layout.json` setpiece `school` (~(457, -1354), Edgewater, 179 m from the Edgewater police substation) for
   the user's mission `docs/v2/plan/MISSION_SCHOOL_ABANDONED_CLASSROOM.md` (stage 2 builds the school, stage 4 the mission).
+- **Robbery block (intro v2 flashback, Nov 19):** 21st St between Washington and Euclid Ave, Miami Beach. Store types that
+  claim single lots: `payday` (Sunshine Payday Loans, storefront 882, `src/world/interiors/types/payday.js`; `store.heist`
+  = store-local staging points) and `cafe_robbery` (Cafe Colada, storefront 1028, `types/robberyCafe.js`). Block frame,
+  spots, the mission-only escape route (fire escape, plank bridges, stair house) and the red CAFE awning:
+  `src/story/sets/robberyBlock.js`. `game.interiorsV2.pin(storefrontId, on)` keeps a lot's interior among the three
+  active ones while a mission needs it (pinned lots within 70 m go first).
 - **Fire alarm distraction:** `docs/v2/plan/DISTRACTION_FIRE_ALARM.md` (pull stations in casino, hotels, school, offices).
 - **Rough district:** Overtown and Liberty City (district kind `ghetto`), buildings tagged `condition: rundown|abandoned`.
   At runtime the condition is `hash(id + 6101) < 0.18 ? abandoned : rundown` (same rule in `bldmodels.js` and
