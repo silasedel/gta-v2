@@ -195,6 +195,13 @@
   {"n": 190, "g": "m", "age": "adult", "years": 33, "h": 1.88, "role": "soldier", "look": "uniform", "places": ["military"], "hat": 0.04, "name": "Gate Guard In Navy Security Uniform And Black Beret"},
   {"n": 191, "g": "m", "age": "adult", "years": 24, "h": 1.8, "role": "soldier", "look": "uniform", "places": ["military"], "name": "Off-Duty Soldier In Tan Tee Camo Pants And Dog Tags"},
   {"n": 192, "g": "m", "age": "adult", "years": 36, "h": 1.79, "role": "mechanic", "look": "worker", "places": ["military"], "name": "Military Mechanic In Olive Coveralls Tied At The Waist"},
-  {"n": 193, "g": "m", "age": "adult", "years": 30, "h": 1.8, "role": "ground_crew", "look": "worker", "places": ["military", "aviation"], "name": "Flight-Line Crewman In Yellow Vest With Marshalling Wands", "src": "tools/v2/npcs/out/apose/p193_tpose.glb", "rigidHands": true}
+  {"n": 193, "g": "m", "age": "adult", "years": 30, "h": 1.8, "role": "ground_crew", "look": "worker", "places": ["military", "aviation"], "name": "Flight-Line Crewman In Yellow Vest With Marshalling Wands", "src": "tools/v2/npcs/out/apose/p193_tpose.glb", "rigidHands": true},
+  {"n": 194, "g": "f", "age": "older", "years": 55, "h": 1.65, "role": "counselor", "look": "business", "places": ["prison_staff"], "name": "Prison Counselor In Olive Blazer With Glasses And Lanyard"},
+  {"n": 195, "g": "m", "age": "adult", "years": 38, "h": 1.85, "role": "corrections_officer", "look": "uniform", "places": ["prison_staff"], "name": "Corrections Officer In Dark Uniform And Duty Belt"},
+  {"n": 196, "g": "f", "age": "older", "years": 54, "h": 1.66, "role": "inmate", "look": "uniform", "places": ["inmate"], "name": "Older Inmate Woman In Orange Scrubs With ID Badge"},
+  {"n": 197, "g": "f", "age": "adult", "years": 30, "h": 1.69, "role": "inmate", "look": "uniform", "places": ["inmate"], "name": "Inmate Woman In Orange Scrubs With Long Braid"},
+  {"n": 198, "g": "f", "age": "adult", "years": 27, "h": 1.65, "role": "inmate", "look": "uniform", "places": ["inmate"], "name": "Inmate Woman In Orange Scrubs With Curly Updo"},
+  {"n": 199, "g": "f", "age": "adult", "years": 33, "h": 1.68, "role": "inmate", "look": "uniform", "places": ["inmate"], "name": "Inmate Woman In Orange Scrubs With Locs"},
+  {"n": 200, "g": "m", "age": "adult", "years": 46, "h": 1.75, "role": "cashier", "look": "casual", "places": ["payday_loan"], "name": "Heavyset Cashier In Blue Floral Shirt And Glasses"}
  ]
 }

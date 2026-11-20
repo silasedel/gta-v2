@@ -6822,6 +6822,230 @@
     "leg": 1.0,
     "hat": false
    }
+  },
+  {
+   "id": "p194",
+   "file": "p194.glb",
+   "name": "Prison Counselor In Olive Blazer With Glasses And Lanyard",
+   "g": "f",
+   "age": "older",
+   "years": 55,
+   "role": "counselor",
+   "places": [
+    "prison_staff"
+   ],
+   "height": 1.655,
+   "hipH": 0.8527,
+   "tris": {
+    "LOD0_body": 49016,
+    "LOD1_body": 5000,
+    "LOD2_body": 1200
+   },
+   "a2": true,
+   "skirt": false,
+   "cols": {
+    "skin": 9457976,
+    "top": 4928554,
+    "bottom": 8743505,
+    "hair": 6900018,
+    "shoes": 3154973,
+    "sleeve": 0.8,
+    "leg": 0.25,
+    "hat": false
+   },
+   "look": "business"
+  },
+  {
+   "id": "p195",
+   "file": "p195.glb",
+   "name": "Corrections Officer In Dark Uniform And Duty Belt",
+   "g": "m",
+   "age": "adult",
+   "years": 38,
+   "role": "corrections_officer",
+   "places": [
+    "prison_staff"
+   ],
+   "height": 1.856,
+   "hipH": 0.9167,
+   "tris": {
+    "LOD0_body": 48038,
+    "LOD1_body": 5000,
+    "LOD2_body": 1200
+   },
+   "a2": true,
+   "skirt": false,
+   "cols": {
+    "skin": 6897969,
+    "top": 4933188,
+    "bottom": 2236963,
+    "hair": 2828840,
+    "shoes": 1513237,
+    "sleeve": 0.0,
+    "leg": 1.0,
+    "hat": false
+   },
+   "look": "uniform"
+  },
+  {
+   "id": "p196",
+   "file": "p196.glb",
+   "name": "Older Inmate Woman In Orange Scrubs With ID Badge",
+   "g": "f",
+   "age": "older",
+   "years": 54,
+   "role": "inmate",
+   "places": [
+    "inmate"
+   ],
+   "height": 1.661,
+   "hipH": 0.8412,
+   "tris": {
+    "LOD0_body": 47508,
+    "LOD1_body": 5000,
+    "LOD2_body": 1200
+   },
+   "a2": true,
+   "skirt": false,
+   "cols": {
+    "skin": 7945761,
+    "top": 12011538,
+    "bottom": 11419917,
+    "hair": 2499101,
+    "shoes": 1052172,
+    "sleeve": 0.4,
+    "leg": 1.0,
+    "hat": false
+   },
+   "look": "uniform"
+  },
+  {
+   "id": "p197",
+   "file": "p197.glb",
+   "name": "Inmate Woman In Orange Scrubs With Long Braid",
+   "g": "f",
+   "age": "adult",
+   "years": 30,
+   "role": "inmate",
+   "places": [
+    "inmate"
+   ],
+   "height": 1.694,
+   "hipH": 0.8355,
+   "tris": {
+    "LOD0_body": 47740,
+    "LOD1_body": 5000,
+    "LOD2_body": 1200
+   },
+   "a2": true,
+   "skirt": false,
+   "cols": {
+    "skin": 6632988,
+    "top": 11354130,
+    "bottom": 12601104,
+    "hair": 3025186,
+    "shoes": 2235670,
+    "sleeve": 0.4,
+    "leg": 1.0,
+    "hat": false
+   },
+   "look": "uniform"
+  },
+  {
+   "id": "p198",
+   "file": "p198.glb",
+   "name": "Inmate Woman In Orange Scrubs With Curly Updo",
+   "g": "f",
+   "age": "adult",
+   "years": 27,
+   "role": "inmate",
+   "places": [
+    "inmate"
+   ],
+   "height": 1.654,
+   "hipH": 0.8155,
+   "tris": {
+    "LOD0_body": 47546,
+    "LOD1_body": 5000,
+    "LOD2_body": 1200
+   },
+   "a2": true,
+   "skirt": false,
+   "cols": {
+    "skin": 9783592,
+    "top": 13062167,
+    "bottom": 12012307,
+    "hair": 4141351,
+    "shoes": 2958878,
+    "sleeve": 0.1,
+    "leg": 0.33,
+    "hat": false
+   },
+   "look": "uniform"
+  },
+  {
+   "id": "p199",
+   "file": "p199.glb",
+   "name": "Inmate Woman In Orange Scrubs With Locs",
+   "g": "f",
+   "age": "adult",
+   "years": 33,
+   "role": "inmate",
+   "places": [
+    "inmate"
+   ],
+   "height": 1.682,
+   "hipH": 0.8283,
+   "tris": {
+    "LOD0_body": 48176,
+    "LOD1_body": 4999,
+    "LOD2_body": 1199
+   },
+   "a2": true,
+   "skirt": false,
+   "cols": {
+    "skin": 9719082,
+    "top": 12602638,
+    "bottom": 12208397,
+    "hair": 3351834,
+    "shoes": 1841684,
+    "sleeve": 0.2,
+    "leg": 0.92,
+    "hat": false
+   },
+   "look": "uniform"
+  },
+  {
+   "id": "p200",
+   "file": "p200.glb",
+   "name": "Heavyset Cashier In Blue Floral Shirt And Glasses",
+   "g": "m",
+   "age": "adult",
+   "years": 46,
+   "role": "cashier",
+   "places": [
+    "payday_loan"
+   ],
+   "height": 1.757,
+   "hipH": 0.8679,
+   "tris": {
+    "LOD0_body": 47716,
+    "LOD1_body": 5000,
+    "LOD2_body": 1200
+   },
+   "a2": true,
+   "skirt": false,
+   "cols": {
+    "skin": 8211513,
+    "top": 6052210,
+    "bottom": 3485998,
+    "hair": 2631203,
+    "shoes": 5064253,
+    "sleeve": 0.6,
+    "leg": 1.0,
+    "hat": false
+   },
+   "look": "casual"
   }
  ]
 }
