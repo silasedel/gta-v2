@@ -11,6 +11,9 @@ import { R4WATER } from './freshMask.js';
 
 const SHORE_MAX = 140; // metres encoded in the distance field
 const DBG = typeof location !== 'undefined' && /[?&]gdbg=1\b/.test(location.search); // r2-ground: depth debug view
+// world_nov19b: pixel-width antialiasing of the shore bands (edge fade, foam lace, wet fringe). ?nov19b=0 = old.
+const NOV19B = !(typeof location !== 'undefined' && /[?&]nov19b=0\b/.test(location.search));
+const AAK = NOV19B ? '1.0' : '0.0';
 
 export function createOcean(game, skyUniforms, normalsTex) {
   const u = skyUniforms;
@@ -233,7 +236,12 @@ export function createOcean(game, skyUniforms, normalsTex) {
         // well, so where the bank is a step / mesh rim (path short even though the water is suddenly deep) the water still
         // thins out softly over ~0.4 m instead of cutting off on the ground mesh's polygon outline; scaled with distance so
         // far shores stay soft without going blurry up close.
-        float kEdge = uSoft > 0.5 ? smoothstep( 0.0, 0.02, softD ) * smoothstep( 0.0, 0.25 + 0.004 * dist, softP ) : 1.0;
+        // world_nov19b (user: "harsh edges, glitching back and forth"): every edge band is at least ~1.5 px wide on screen.
+        // A 2 cm depth band is sub-pixel at range, so the waterline snapped between land and water with each TAA jitter and
+        // the resolve rejected it (crawling, flickering shore). fwidth widens the bands where the depth changes fast per pixel.
+        float aaD = uSoft > 0.5 ? min( fwidth( softD ), 0.5 ) * ${AAK} : 0.0;
+        float aaP = uSoft > 0.5 ? min( fwidth( softP ), 2.0 ) * ${AAK} : 0.0;
+        float kEdge = uSoft > 0.5 ? smoothstep( 0.0, 0.02 + aaD * 1.5, softD ) * smoothstep( 0.0, 0.25 + 0.004 * dist + aaP * 1.5, softP ) : 1.0;
         kEdge = mix( kEdge, 1.0, wadeK );
         dP = max( dE, 0.0 );
         float cv = sqrt( max( 1.0 - ( 1.0 - NdV * NdV ) / 1.769, 0.0 ) ), cs = sqrt( max( 1.0 - ( 1.0 - L.y * L.y ) / 1.769, 0.0 ) );
@@ -259,12 +267,15 @@ export function createOcean(game, skyUniforms, normalsTex) {
         float crest = pow( 0.5 + 0.5 * sin( ph ), 6.0 ) * smoothstep( 0.02, 0.12, dE ) * ( 1.0 - smoothstep( 0.4, 1.4, dE ) ) * hK;
         addC += vec3( 0.02 ) * crest * Ein;
         float lw = ( 0.004 + 0.006 * ( 0.5 + 0.5 * sin( t * 1.1 + p.x * 0.11 - p.y * 0.07 ) ) ) * clamp( wS / 0.05, 0.6, 2.5 );
-        float lace = ( 1.0 - smoothstep( 0.0, lw, abs( dE - lw * 0.8 ) ) ) * smoothstep( 0.35, 0.65, oN( p * 2.4 + vec2( t * 0.07, 0.0 ) ) * 0.6 + oN( p * 9.0 - vec2( 0.0, t * 0.1 ) ) * 0.4 ) * hK;
+        float lwA = lw + min( fwidth( dE ), 0.2 ) * 0.75 * ${AAK}; // world_nov19b: no sub-pixel foam line (it sparkled at range)
+        float lace = ( 1.0 - smoothstep( 0.0, lwA, abs( dE - lw * 0.8 ) ) ) * ( lw / lwA ) * smoothstep( 0.35, 0.65, oN( p * 2.4 + vec2( t * 0.07, 0.0 ) ) * 0.6 + oN( p * 9.0 - vec2( 0.0, t * 0.1 ) ) * 0.4 ) * hK;
         float fA = clamp( lace * 0.55, 0.0, 1.0 ) * smoothstep( -0.01, 0.004, dE );
         // soft wet-foam fringe on the true edge: a few cm of broken, breathing foam that thins out into the water
-        if ( uSoft > 0.5 && min( softD, softP * 0.15 ) < 0.12 ) {
+        float eDw = uSoft > 0.5 ? min( fwidth( min( softD, softP * 0.15 ) ), 0.3 ) * ${AAK} : 0.0; // world_nov19b: fringe >= ~1.5 px wide
+        if ( uSoft > 0.5 && min( softD, softP * 0.15 ) < 0.12 + eDw * 1.5 ) {
           float eD = min( softD, softP * 0.15 ); // the step banks get the same gentle fringe as sloped beaches
-          float fr = ( 1.0 - smoothstep( 0.004, 0.06 + 0.03 * sin( t * 0.9 + p.x * 0.21 + p.y * 0.17 ), eD ) ) * smoothstep( 0.3, 0.7, oN( p * 3.1 + vec2( t * 0.05, -t * 0.04 ) ) * 0.7 + oN( p * 11.0 ) * 0.3 );
+          float frW = 0.06 + 0.03 * sin( t * 0.9 + p.x * 0.21 + p.y * 0.17 );
+          float fr = ( 1.0 - smoothstep( 0.004, frW + eDw * 1.5, eD ) ) * ( frW / ( frW + eDw * 1.5 ) ) * smoothstep( 0.3, 0.7, oN( p * 3.1 + vec2( t * 0.05, -t * 0.04 ) ) * 0.7 + oN( p * 11.0 ) * 0.3 );
           fA = max( fA, fr * mix( 0.28, 0.55, wadeK ) );
         }
         // the wader's own water: a broken foam collar where the body cuts the surface and small rings running out from it

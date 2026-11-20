@@ -17,7 +17,18 @@ export function createSeabed(game, city) {
     g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(N * N * 3), 3));
     return g;
   });
-  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0 });
+  // world_nov19b (user: "water edges glitching back and forth"): next to the shore the seabed is laid 5 mm under the
+  // terrain's under-water strip (the collider must match the drawn bottom), so the two fought in depth at range and the
+  // bank flickered through the water. The seabed now always loses that tie to the drawn ground (a negative offset that let
+  // it win drew it over the land at grazing angles: the factor term scales with the depth slope).
+  const mat = new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    roughness: 0.6,
+    metalness: 0,
+    polygonOffset: !(typeof location !== 'undefined' && /[?&]nov19b=0\b/.test(location.search)),
+    polygonOffsetFactor: 1.5,
+    polygonOffsetUnits: 4,
+  });
   // r2-ground: the same soft moving caustics as the terrain under the water (groundShader.js), fading out by 2.5 m depth
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uSbT = U_T;
