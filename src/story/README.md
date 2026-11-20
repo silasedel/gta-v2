@@ -13,7 +13,7 @@ sting). The intro plot is in `docs/v2/plan/STORY_INTRO_SCRIPT.md`.
 | `markers.js`    | available-mission markers (lettered blip + ground ring) and the objective waypoint                                                                                         |
 | `ui.js`         | title banner, Mission Failed screen (Retry / Quit), subtitles, skip prompt, phone-call card                                                                                |
 | `props.js`      | `loadMissionProp(id)`: crates, `package_waterproof`, scuba gear, shipwreck, flares, `zip_tie`, rope, phone, briefcase, cash (`public/assets/models/mission/manifest.json`) |
-| `intro.js`      | the five intro mission ids, in play order                                                                                                                                  |
+| `intro.js`      | the intro v2 mission ids (Mari, then Nico: 14), in play order                                                                                                                                 |
 | `missions/*.js` | one file per mission, registered automatically (files starting with `_` load only with `?storytest=1`)                                                                     |
 
 ## Adding a mission
@@ -145,8 +145,11 @@ functions of `ctx` or handle names. Nico's house anchors: `game.nicoHouse.anchor
 Cutscenes played from a step (`cutscene:` or `ctx.cutscene`) can look at the mission's handles too:
 `look: 'actor:dex'` finds `ctx.h.dex` when the scene has no actor of that name.
 
-The intro missions (`missions/intro.*.js`, shared data in `missions/lib/intro.js`) are full examples: vehicles,
-boats, a floatplane, props, a gang fight, protect / escaped / leftArea rules, checkpoints with `restore`.
+Nico's intro missions (`missions/intro2.switchNico|smuggling|packages|swamp|seaplane|home.js`, shared data and helpers
+in `missions/lib/intro.js`, the drop plane `lib/dropPlane.js`, the swamp camp set `lib/swampCamp.js`, its gang
+`lib/campCrew.js`, the employer's dock `lib/marina.js`) are full examples: boats, a scripted plane, a flyable floatplane,
+mission sets built in `setup` and disposed by cleanup, a sneak-or-fight crew, protect / escaped / leftArea rules,
+checkpoints with `restore`, and `auto(ctx)` step hooks for the end-to-end test (`tools/v2/story/intro2_play.mjs`).
 
 ### What pass, fail and skip do
 
@@ -193,7 +196,7 @@ Hooks for later assets:
 
 ## People for the missions (the user's Tripo people, `public/assets/npc/people/index.json`)
 
-The intro cast is `CAST` in `missions/lib/intro.js` (Vale, Dex, Lou, Cisco, the Sawgrass Boys, the poachers, Vale's
+Nico's intro cast is `CAST` in `missions/lib/intro.js` (Vale, Dex, Lou, Cisco, the Sawgrass Boys, the poachers, Vale's
 bodyguards, the seaplane and drop pilots). A mission's `setup` calls `loadCast(ids)` so `spawnActor` and cutscene actors
 get the real person instead of a stand-in from the street crowd. People ready for Phase C:
 
