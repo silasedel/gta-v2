@@ -756,6 +756,7 @@ export function placeTrees(ctx, x0, z0, S, emit) {
         ])
           if (!D.isWater(x + dx, z + dz)) land++; // only the shallow fringe right at the shore (deeper water: the roots would hang in the water)
         if (!land || vn(x / 41 + 2.7, z / 41 - 1.3) < 0.36 || p > 0.8) continue;
+        if (MG_SHORE && !mangroveShore(D, x, z)) continue;
         b = BIDX.mangrove;
         wet = true;
       }
@@ -832,6 +833,7 @@ export function placeTrees(ctx, x0, z0, S, emit) {
             z2 = z + Math.sin(a2) * d2;
           if (ctx.blocked && ctx.blocked(x2, z2, 2)) continue;
           if (!ctx.data.isWater(x2, z2) && (ctx.roadDist ? ctx.roadDist(x2, z2) : 99) < 6) continue;
+          if (MG_SHORE && ctx.data.isWater(x2, z2) && !mangroveShore(ctx.data, x2, z2)) continue;
           emit({
             name,
             v: pickIdx(K.w || [1], hh(i, j, 25 + k)),
@@ -856,6 +858,19 @@ export function placeTrees(ctx, x0, z0, S, emit) {
       }
     }
   lotTrees(ctx, x0, z0, S, emit, ctx.lotSeen || null); // yard trees in house lots
+}
+// world_nov19b (user: mangroves "floating above" the water): clump trunks were set up to ~4 m further out than the first trunk,
+// so some stood in open water. The ground pass (vegGround.v2.js) drops a mangrove in water with no land within 8 m, but only
+// within 170 m of the camera: out there they stayed as impostors standing on the open bay (roots on the water surface, no
+// shore behind them) and vanished as the player came close. The same shore test now decides at placement, near and far alike.
+const MG_SHORE = !(typeof location !== 'undefined' && /[?&]nov19b=0\b/.test(location.search));
+function mangroveShore(D, x, z) {
+  for (let a = 0; a < 8; a++) {
+    for (const d of [3, 6, 8]) {
+      if (!D.isWater(x + Math.cos(a * 0.785) * d, z + Math.sin(a * 0.785) * d)) return true;
+    }
+  }
+  return false;
 }
 function junctionGap(D, x, z) {
   // distance outside the nearest junction disc (node width / 2 + 2 m of curb return); the same test in both the tile collider pass and the streamer
@@ -1244,6 +1259,8 @@ const MBAND = {
     [120, 145, 380, 440],
   ],
 };
+// world_nov19b: re-plant a cell in one step when its terrain changes (no blink). ?nov19b=0 = old.
+const REGEN_IN_PLACE = !(typeof location !== 'undefined' && /[?&]nov19b=0\b/.test(location.search));
 const CELLS = 64,
   HALF = CELLS * 0.7072,
   MARGIN = 11,
@@ -2346,16 +2363,58 @@ export function createCountryside({
       const h = hSig(c);
       if (h.some((v, i) => Math.abs(v - c.hs[i]) > 0.02)) {
         moved++;
-        c.lists.clear();
-        c.lv.t = c.lv.s = c.lv.g = 0;
-        c.grid = null;
-        c.hs = null;
-        dirty = true;
+        if (REGEN_IN_PLACE) {
+          c.regen = true;
+          regenPending++;
+        } else {
+          c.lists.clear();
+          c.lv.t = c.lv.s = c.lv.g = 0;
+          c.grid = null;
+          c.hs = null;
+          dirty = true;
+        }
       }
     }
     if (moved) {
       meshGround(terrain).flush?.();
       st.resampled = (st.resampled || 0) + moved;
+    }
+  }
+  // world_nov19b (user: "things are loading in way too last second"): when the terrain under a cell changed (its LOD streamed
+  // in) the cell was emptied and re-planted level by level over the next frames, so every plant in it blinked out and popped
+  // back near the camera. The cell now keeps its plants until it is re-planted in one step (nearest first, ~2 ms a frame).
+  let regenPending = 0;
+  function regenCells(cam, budgetMs) {
+    if (!regenPending) return;
+    const t0 = performance.now();
+    for (;;) {
+      let best = null,
+        bd = Infinity;
+      for (const c of cells.values()) {
+        if (!c.regen) continue;
+        const d = (c.cx - cam.position.x) ** 2 + (c.cz - cam.position.z) ** 2;
+        if (d < bd) {
+          bd = d;
+          best = c;
+        }
+      }
+      if (!best) {
+        regenPending = 0;
+        return;
+      }
+      regenPending = Math.max(0, regenPending - 1);
+      const had = { ...best.lv };
+      best.regen = false;
+      best.lists.clear();
+      best.lv.t = best.lv.s = best.lv.g = 0;
+      best.grid = null;
+      best.hs = null;
+      if (had.t) genTrees(best);
+      if (had.s) genShrubs(best);
+      if (had.g) genGround(best);
+      seal(best);
+      dirty = true;
+      if (performance.now() - t0 > budgetMs) return;
     }
   }
   let frame = 0,
@@ -2438,6 +2497,7 @@ export function createCountryside({
     }
     try {
       terrainCheck(cam, now);
+      regenCells(cam, 2);
     } catch (e) {
       /* never break the streamer */
     }
