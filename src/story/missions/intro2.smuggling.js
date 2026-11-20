@@ -72,6 +72,7 @@ export default defineMission({
       id: 'follow',
       text: 'Follow the plane.',
       waypoint: 'plane',
+      gps: false,
       onTick: (ctx, dt) => bobBales(ctx, dt),
       until: (ctx) => ctx.data.plane?.done && ctx.data.bales.filter(Boolean).length >= 6,
       fail: {

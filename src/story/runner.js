@@ -520,6 +520,8 @@ export function createRunner(game, story) {
           label: step.text,
           ring: typeof target !== 'string',
           radius: step.trigger?.interact ? 1.2 : 2.2,
+          // gps: false = blip and ring only, no road route (on foot in a swamp, in the air)
+          gps: step.gps,
         });
       }
       if (run.trigger || step.until) {

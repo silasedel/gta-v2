@@ -4,28 +4,39 @@
 import { defineMission } from '../runner.js';
 import { HOURS, house, asNico, setHour, shared } from './lib/intro.js';
 import { INTRO_DONE_FLAG, FREE_ROAM_UNLOCK } from '../intro.js';
+import { MARI } from '../../player/mari/index.js';
 
+// cameras around the house: from the yard side, framed on the house center (game.nicoHouse.center)
 function homeCutscene(ctx) {
-  const yard = house(ctx.game, 'spawnYard');
+  const game = ctx.game;
+  const yard = house(game, 'spawnYard');
+  const c = game.nicoHouse?.center || { x: yard.x + 10, y: 0, z: yard.z + 10 };
+  let dx = yard.x - c.x;
+  let dz = yard.z - c.z;
+  const d = Math.sqrt(dx * dx + dz * dz) || 1;
+  dx /= d;
+  dz /= d;
+  const gy = game.city?.groundHeightAt?.(yard.x, yard.z) ?? 0;
+  // out from the house past the yard, a little to the side, up high, then a push in
+  const out = (k, side, up) => [yard.x + dx * k - dz * side, gy + up, yard.z + dz * k + dx * side];
+  const houseLook = [c.x, gy + 3.2, c.z];
   return {
     id: 'intro2.home.night',
-    frame: yard,
-    player: { at: yard },
+    player: { at: { ...yard, heading: Math.atan2(-dx, -dz) } },
     shots: [
-      // the house at night, porch lights on, a slow push in
       {
         dur: 5.5,
         mm: 24,
-        from: { pos: [14, 7, -26], look: [0, 3, 0] },
-        to: { pos: [10, 5, -19], look: [0, 2.6, 0] },
+        from: { pos: out(16, 7, 6), look: houseLook },
+        to: { pos: out(11, 5, 4), look: houseLook },
         ease: 'inOut',
       },
-      { dur: 4.5, mm: 50, from: { pos: [2.4, 1.6, 2.6], look: 'player' }, aperture: 1.6 },
+      { dur: 4.5, mm: 50, from: { pos: out(-2.2, 1.6, 1.65), look: 'player' }, aperture: 1.6 },
       {
         dur: 5,
         mm: 85,
         cut: 'dissolve',
-        from: { pos: [1.3, 1.7, 1.7], look: 'player' },
+        from: { pos: out(-1.6, -0.9, 1.7), look: 'player' },
         aperture: 1.8,
       },
     ],
@@ -64,6 +75,8 @@ export default defineMission({
     }
     shared.plane?.dispose?.();
     shared.plane = null;
+    // Mari is out of the story's hands too: in free roam she is back at her place above the dive shop
+    ctx.game.characters?.stage?.('mari', MARI.home);
   },
   steps: [
     { id: 'night', cutscene: homeCutscene },

@@ -186,7 +186,7 @@ export function createCampCrew(ctx, opts) {
     else _a.set(p.pos.x, p.pos.y + 1.35, p.pos.z);
     const pp = P.position;
     const speed = P.state?.speed || 0;
-    const hitChance = Math.max(0.08, Math.min(0.5, 0.46 - d * 0.008 - speed * 0.03));
+    const hitChance = Math.max(0.06, Math.min(0.34, 0.34 - d * 0.007 - speed * 0.03));
     const hit = Math.random() < hitChance;
     const miss = hit ? 0 : 1 + Math.random() * 1.6;
     _b.set(
@@ -260,7 +260,7 @@ export function createCampCrew(ctx, opts) {
       keepFighting(p);
       m.fireCd -= dt;
       if (m.fireCd <= 0 && d < FIRE_RANGE && P.health > 0) {
-        m.fireCd = 0.7 + Math.random() * 1.1;
+        m.fireCd = 1.0 + Math.random() * 1.3;
         if (lineOfSight(p.pos, pp)) shoot(m, d);
       }
     }

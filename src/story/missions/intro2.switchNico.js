@@ -42,36 +42,35 @@ function meeting(ctx) {
   const m = ctx.data.marina.spots;
   return {
     id: 'intro2.switchNico.dock',
-    frame: m.crew,
-    // the crew on the end of the pier: Lou with the radio, Dex by the boat; Nico walks up from the shore
+    frame: m.meet,
+    // on the pier: Lou with the radio out toward the water, Dex at the rail; Nico walks up from the shore
     actors: {
-      lou: { person: CAST.lou, at: [-0.9, 0.05, -1.2, 0.4], pose: 'phone_text' },
-      dex: { person: CAST.dex, at: [1.1, 0.05, 1.4, Math.PI + 0.3], pose: 'cross_arms' },
+      lou: { person: CAST.lou, at: [-0.7, 0.05, 1.1, Math.PI + 0.25], pose: 'phone_text' },
+      dex: { person: CAST.dex, at: [1.0, 0.05, -0.4, -Math.PI / 2 - 0.4], pose: 'cross_arms' },
     },
-    // on the deck (cs.at gives the frame's deck height)
-    setup: (cs) => standAt(ctx.game, { ...cs.at([0.1, 0.05, -3.2, 0]), y: m.deckY + 0.05 }),
+    setup: (cs) => standAt(ctx.game, { ...cs.at([0.2, 0.05, -2.4, 0]), y: m.deckY + 0.05 }),
     shots: [
-      // wide: the dock, the boat, turquoise water; a slow crane down
+      // wide from up the beach: the pier, the boat, the turquoise flats; a slow crane down
       {
         dur: 5,
         mm: 24,
-        from: { pos: [-16, 9, -10], look: [0, 1, 6] },
-        to: { pos: [-12, 4, -7], look: [0, 1.2, 4] },
+        from: { pos: [-12, 9, -22], look: [0, 1, 4] },
+        to: { pos: [-9, 4.5, -16], look: [0, 1.2, 2] },
         ease: 'inOut',
       },
-      // Lou on the radio, over Nico's shoulder
-      { dur: 4.5, mm: 50, from: { pos: [0.6, 1.75, -4.4], look: 'actor:lou' }, aperture: 1.6 },
-      // Dex
-      { dur: 3.5, mm: 65, from: { pos: [-0.8, 1.6, -0.6], look: 'actor:dex' }, aperture: 1.8 },
+      // over Nico's shoulder onto Lou with the radio
+      { dur: 4.5, mm: 45, from: { pos: [0.65, 1.75, -3.3], look: 'actor:lou' }, aperture: 1.6 },
+      // Dex at the rail
+      { dur: 3.5, mm: 60, from: { pos: [-0.9, 1.6, 0.6], look: 'actor:dex' }, aperture: 1.8 },
       // the plane passes low over the dock
       {
         dur: 4.5,
         mm: 28,
-        from: { pos: [1.5, 1.4, -1.5], look: () => planeLook(ctx) },
+        from: { pos: [1.4, 1.3, 1.8], look: () => planeLook(ctx) },
         handheld: 0.8,
       },
       // Nico
-      { dur: 3.5, mm: 85, cut: 'dissolve', from: { pos: [1.4, 1.7, -1.4], look: 'player' } },
+      { dur: 3.5, mm: 75, cut: 'dissolve', from: { pos: [0.8, 1.7, -1.0], look: 'player' } },
     ],
     lines: [
       {

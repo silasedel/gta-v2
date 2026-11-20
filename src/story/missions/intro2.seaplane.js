@@ -16,6 +16,7 @@ import {
   playerVehicle,
   house,
   standAt,
+  redLivery,
 } from './lib/intro.js';
 import { buildSwampCamp } from './lib/swampCamp.js';
 
@@ -57,7 +58,7 @@ function paid(ctx) {
   const m = ctx.data.marina.spots;
   return {
     id: 'intro2.seaplane.paid',
-    frame: m.crew,
+    frame: m.meet,
     actors: {
       vale: { person: CAST.vale, at: [0, 0.05, 2.4, Math.PI], pose: 'idle' },
       lou: { person: CAST.lou, at: [-1.4, 0.05, 3.4, Math.PI - 0.3], pose: 'cross_arms' },
@@ -136,6 +137,7 @@ export default defineMission({
       });
     } else {
       await spawnPlane(ctx, 'plane', 'floatplane', PLACES.farDockWater);
+      redLivery(ctx, ctx.h.plane);
     }
     shared.seaplane = null;
     ctx.data.marina = await useMarina(ctx, false);
@@ -189,6 +191,7 @@ export default defineMission({
       onTick: (ctx) => dropCampWhenFar(ctx),
       until: (ctx) => ctx.dist(ctx.data.marina.spots.plane) < NEAR_MARINA,
       waypoint: (ctx) => ctx.data.marina.spots.plane,
+      gps: false,
       auto(ctx) {
         const p = ctx.data.marina.spots.planeApproach;
         placePlane(ctx, p, 40, 45, p.heading);
@@ -199,6 +202,7 @@ export default defineMission({
       text: 'Land on the water.',
       until: (ctx) => ctx.game.player.position.y < SEA + 3 && speedKmh(ctx) < 75,
       waypoint: (ctx) => ctx.data.marina.spots.plane,
+      gps: false,
       fail: {
         leftArea: {
           at: (ctx) => ctx.data.marina.spots.plane,
@@ -215,6 +219,7 @@ export default defineMission({
     {
       id: 'taxi',
       text: 'Taxi to the dock.',
+      gps: false,
       trigger: { reach: { at: (ctx) => ctx.data.marina.spots.plane, r: 26, inVehicle: true } },
       auto(ctx) {
         const q = ctx.data.marina.spots.plane;

@@ -38,7 +38,7 @@ export const CAST = {
   vale: 'p44', // the employer, at the marina
   dex: 'p159', // Nico's partner on the boat
   lou: 'p162', // the fixer on the radio
-  cisco: 'p155', // the associate the gang takes
+  cisco: 'p179', // the associate the gang takes (a weathered boat owner in a fishing shirt and white cap)
   guards: ['p175', 'p176'], // Vale's bodyguards: black polo, charcoal suit
   poachers: ['p177', 'p178', 'p188'], // swamp poachers who ride with the Sawgrass Boys
   sawgrass: ['p151', 'p152', 'p153', 'p154', 'p156', 'p157'],
@@ -280,4 +280,41 @@ export function standAt(game, at) {
   } catch (e) {
     console.warn('[intro2] stand', e);
   }
+}
+
+// The gang's floatplane is white and red (storyboard panel 12): this plane's own copy of the livery material turns the
+// blue trim red (a hue swap in the shader); the other floatplanes in the game keep theirs. Cleaned up with the mission.
+export function redLivery(ctx, A) {
+  const mesh = A?.mesh;
+  if (!mesh) return;
+  const swapped = [];
+  mesh.traverse((o) => {
+    if (!o.isMesh || !o.material || o.material.name !== 'Panel Texture') return;
+    const m = o.material.clone();
+    m.onBeforeCompile = (sh) => {
+      sh.fragmentShader = sh.fragmentShader.replace(
+        '#include <map_fragment>',
+        `#include <map_fragment>
+        {
+          vec3 c = diffuseColor.rgb;
+          float blue = smoothstep(0.06, 0.2, c.b - max(c.r, c.g));
+          vec3 red = vec3(c.b * 1.05 + 0.04, c.g * 0.35, c.g * 0.3);
+          diffuseColor.rgb = mix(c, red, blue);
+        }`,
+      );
+    };
+    m.customProgramCacheKey = () => 'intro2RedLivery';
+    swapped.push({ o, was: o.material, m });
+    o.material = m;
+  });
+  ctx.track(
+    swapped,
+    () => {
+      for (const s of swapped) {
+        s.o.material = s.was;
+        s.m.dispose();
+      }
+    },
+    { keepOnPass: true },
+  );
 }

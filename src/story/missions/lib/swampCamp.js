@@ -16,6 +16,7 @@ import * as THREE from 'three';
 import { createSet } from '../../sets/setKit.js';
 import { loadModel, partsOf } from '../../../world/everglades/models.js';
 import { loadMissionProp } from '../../props.js';
+import { mossTexture } from '../../../world/everglades/textures.js';
 
 const TREE_N = 96; // bald cypress around the clearing
 const GRASS_N = 2600; // tall grass clumps
@@ -40,6 +41,7 @@ export async function buildSwampCamp(game, at) {
     return Number.isFinite(y) ? y : 0;
   };
   const isWater = (x, z) => !!city?.isWater?.(x, z);
+  const veg = game.vegetation;
   const group = new THREE.Group();
   group.name = 'intro2:swampCamp';
   const own = { geometries: [], materials: [], textures: [] };
@@ -97,13 +99,31 @@ export async function buildSwampCamp(game, at) {
   const south = shoreFrom(0, 1);
   const y0 = ground(C.x, C.z);
 
+  // a material over one of our canvas textures (disposed with the camp)
+  function ownMat(tex, meters, o = {}) {
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.anisotropy = 4;
+    own.textures.push(tex);
+    const m = new THREE.MeshStandardMaterial({
+      map: tex,
+      roughness: o.rough ?? 0.9,
+      metalness: o.metal ?? 0,
+    });
+    m.defines = { NO_WET: '' };
+    m.userData.meters = meters;
+    own.materials.push(m);
+    return m;
+  }
+
   // ---------------------------------------------------------------- the buildings (set kit: merged, colliders, lights)
   const S = createSet(game, { x: C.x, y: y0, z: C.z, name: 'swampCamp' });
-  const planks = S.surf('wood', { c: [92, 78, 60], c2: [64, 54, 42], wear: 0.85 }, { rough: 0.95 });
-  const deck = S.surf('deck', { c: [104, 90, 70], wear: 0.9 }, { rough: 0.95 });
-  const tinRed = S.surf('tin', { c: [138, 58, 44], wear: 0.9 }, { rough: 0.7, metal: 0.4 });
-  const tinGrey = S.surf('tin', { c: [128, 128, 122], wear: 0.9 }, { rough: 0.7, metal: 0.5 });
-  const tinRust = S.surf('tin', { c: [116, 72, 46], wear: 1 }, { rough: 0.8, metal: 0.3 });
+  // weathered boards and corrugated tin, drawn here (2 m per texture repeat, the set kit projects the UVs)
+  const planks = ownMat(plankTexture([96, 84, 66], 11), 2, { rough: 0.95 });
+  const deck = ownMat(plankTexture([112, 98, 76], 29, true), 2, { rough: 0.95 });
+  const tinRed = ownMat(tinTexture([142, 52, 38], 3), 2, { rough: 0.62, metal: 0.35 });
+  const tinGrey = ownMat(tinTexture([132, 134, 128], 8), 2, { rough: 0.55, metal: 0.45 });
+  const tinRust = ownMat(tinTexture([112, 70, 44], 5, 0.9), 2, { rough: 0.75, metal: 0.3 });
   const darkWood = S.flat(0x2e261d, { rough: 0.95 });
   const rope = S.flat(0x8a7350, { rough: 1 });
   const bulb = S.glow(0xffc67a, 6);
@@ -148,8 +168,8 @@ export async function buildSwampCamp(game, at) {
     S.box(deck, -6.6, -0.2, z1 - 0.32, -5.4, top, z1);
   }
   // inside: a chair in the middle (Cisco), a table with a lantern, crates
-  S.box(darkWood, -6.4, FY, -3.6, -5.8, FY + 0.45, -3.0);
-  S.box(darkWood, -6.4, FY + 0.45, -3.0, -5.8, FY + 1.1, -2.94, { collide: false });
+  // the post Cisco is tied to (he sits on the floor against it)
+  S.box(darkWood, -6.2, FY, -2.75, -6.0, FY + H, -2.55);
   S.box(planks, -8.6, FY, -3.2, -7.4, FY + 0.78, -2.0);
   S.box(bulb, -8.1, FY + 0.82, -2.7, -7.96, FY + 1.02, -2.56, { collide: false });
   S.box(planks, -4.2, FY, -2.6, -3.3, FY + 0.6, -1.7);
@@ -246,6 +266,15 @@ export async function buildSwampCamp(game, at) {
     m.rotation.y = o.yaw || 0;
     if (o.tip) m.rotation.z = Math.PI / 2;
     if (o.s) m.scale.setScalar(o.s);
+    if (o.tint) {
+      // our own darker copies of the model's materials (the shared originals stay as they are)
+      m.traverse((n) => {
+        if (!n.isMesh) return;
+        n.material = n.material.clone();
+        n.material.color?.multiplyScalar(o.tint);
+        own.materials.push(n.material);
+      });
+    }
     group.add(m);
     if (o.col) addBox(x, y, z, o.col[0], o.col[1], o.col[2], o.yaw || 0);
     return m;
@@ -263,12 +292,20 @@ export async function buildSwampCamp(game, at) {
     place('everglades/fuel_tank.glb', -13, 8, { yaw: 1.3, col: [1.6, 0.7, 0.55] }),
     place('everglades/clothesline.glb', -13.5, 1, { yaw: 0.2 }),
     place('everglades/junk_car.glb', 16, -10, { yaw: 0.6, col: [2.2, 0.6, 0.9] }),
-    place('everglades/fence_tin.glb', -16, -3, { yaw: Math.PI / 2 + 0.05, col: [2.25, 1.5, 0.08] }),
+    place('everglades/fence_tin.glb', -16, -3, {
+      yaw: Math.PI / 2 + 0.05,
+      col: [2.25, 1.5, 0.08],
+      tint: 0.38,
+    }),
     place('everglades/fence_tin.glb', -16.2, 1.5, {
       yaw: Math.PI / 2 - 0.04,
       col: [2.25, 1.5, 0.08],
     }),
-    place('everglades/fence_tin.glb', -15.9, 6, { yaw: Math.PI / 2 + 0.1, col: [2.25, 1.5, 0.08] }),
+    place('everglades/fence_tin.glb', -15.9, 6, {
+      yaw: Math.PI / 2 + 0.1,
+      col: [2.25, 1.5, 0.08],
+      tint: 0.38,
+    }),
     place('everglades/gas_can.glb', -2.4, -9.8, { yaw: 0.6 }),
     place('everglades/mossy_stone.glb', -18, 12, { yaw: 1.1, s: 0.8 }),
     place('keys/crate.glb', -2.2, -3.4, { yaw: 0.3, col: [0.3, 0.3, 0.3] }),
@@ -299,19 +336,6 @@ export async function buildSwampCamp(game, at) {
   );
   const cashObj = await loads[loads.length - 2].catch(() => null);
   await Promise.all(loads.map((p) => p.catch(() => null)));
-  // the tin fence panels come out bright: weather them down (our own material copies)
-  group.traverse((o) => {
-    if (!o.isMesh || o.userData.weathered) return;
-    const name = o.material?.name || '';
-    if (o.material?.type === 'MeshStandardMaterial' && name === 'MeshStandardMaterial') {
-      o.material = o.material.clone();
-      o.material.color.multiplyScalar(0.42);
-      o.material.roughness = 0.8;
-      own.materials.push(o.material);
-      o.userData.weathered = true;
-    }
-  });
-
   // trampled mud in the yard and along the trails
   const mudTex = mudTexture();
   own.textures.push(mudTex);
@@ -406,6 +430,70 @@ export async function buildSwampCamp(game, at) {
     }
     for (const t of trees) addCylinder(t.x, t.y, t.z, 0.32 * t.s, 4);
   }
+
+  // ---------------------------------------------------------------- live oaks around the yard (the vegetation library)
+  const oaks = [];
+  if (veg?.place) {
+    for (let i = 0; i < 9; i++) {
+      const a = (i / 9) * Math.PI * 2 + 0.4;
+      const r = CLEAR_R + 6 + random() * 10;
+      const x = C.x + Math.cos(a) * r;
+      const z = C.z + Math.sin(a) * r;
+      if (isWater(x, z) || path(x, z)) continue;
+      try {
+        const o = veg.place('liveoak', x, z, { s: 1.1 + random() * 0.4 });
+        oaks.push({ o, x, z, h: 14 });
+      } catch (e) {
+        /* the library may not have the oaks */
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------- Spanish moss curtains in the crowns near the yard
+  const mossTex = mossTexture();
+  own.textures.push(mossTex);
+  const mossMat = new THREE.MeshStandardMaterial({
+    map: mossTex,
+    alphaTest: 0.38,
+    side: THREE.DoubleSide,
+    roughness: 1,
+    color: 0x9a9f86,
+  });
+  mossMat.defines = { NO_WET: '' };
+  own.materials.push(mossMat);
+  const mossGeo = mossCards();
+  own.geometries.push(mossGeo);
+  const hangers = trees
+    .filter((t) => (t.x - C.x) ** 2 + (t.z - C.z) ** 2 < 55 * 55)
+    .map((t) => ({ x: t.x, z: t.z, y: t.y, h: 7.34 * 1.12 * t.s, r: 1.5 * t.s }))
+    .concat(oaks.map((o) => ({ x: o.x, z: o.z, y: ground(o.x, o.z), h: o.h, r: 4 })));
+  const MOSS_N = hangers.length * 6;
+  const moss = new THREE.InstancedMesh(mossGeo, mossMat, Math.max(1, MOSS_N));
+  {
+    const M = new THREE.Matrix4();
+    const Q = new THREE.Quaternion();
+    const V = new THREE.Vector3();
+    const Sc = new THREE.Vector3();
+    let n = 0;
+    for (const t of hangers) {
+      for (let k = 0; k < 6; k++) {
+        const a = random() * Math.PI * 2;
+        const rr = t.r * (0.4 + random() * 0.6);
+        const y = t.y + t.h * (0.45 + random() * 0.35);
+        Q.setFromAxisAngle(V.set(0, 1, 0), random() * Math.PI);
+        M.compose(
+          V.set(t.x + Math.cos(a) * rr, y, t.z + Math.sin(a) * rr),
+          Q,
+          Sc.set(0.8 + random() * 0.8, 1.6 + random() * 2.2, 1),
+        );
+        moss.setMatrixAt(n++, M);
+      }
+    }
+    moss.count = n;
+  }
+  moss.castShadow = true;
+  moss.computeBoundingSphere();
+  group.add(moss);
 
   // ---------------------------------------------------------------- tall grass (crossed cards, instanced)
   const grassTex = grassTexture();
@@ -544,7 +632,6 @@ export async function buildSwampCamp(game, at) {
   }
 
   // keep the countryside / glades plants out of the yard and off the docks while the camp stands
-  const veg = game.vegetation;
   if (veg?.block) {
     blocks.push(veg.block(C.x, C.z, CLEAR_R - 2));
     blocks.push(veg.block(south.x, south.z + 6, 8));
@@ -628,8 +715,8 @@ export async function buildSwampCamp(game, at) {
     trailer: W(9.8, 5.0, 0),
     cash: { x: cashAt.x, z: cashAt.z },
     fire: W(FIRE.x, FIRE.z),
-    dock: { x: south.x, z: south.z + 4, heading: 0 },
-    dockEnd: { x: dockEnd.x, z: dockEnd.z - 1, heading: 0 },
+    dock: { x: south.x, y: dockEnd.top + 0.05, z: south.z + 4, heading: 0 },
+    dockEnd: { x: dockEnd.x, y: dockEnd.top + 0.05, z: dockEnd.z - 1, heading: 0 },
     plane: { x: south.x + 7, z: south.z + 16, heading: Math.PI / 2 },
     floorY: y0 + FY,
   };
@@ -660,6 +747,9 @@ export async function buildSwampCamp(game, at) {
     for (const m of own.materials) m.dispose();
     for (const tx of own.textures) tx.dispose();
     grass.dispose?.();
+    moss.dispose?.();
+    for (const o of oaks) o.o.remove?.();
+    oaks.length = 0;
     for (const im of instanced) im.dispose?.();
     for (const id of blocks) veg?.unblock?.(id);
     blocks.length = 0;
@@ -669,6 +759,17 @@ export async function buildSwampCamp(game, at) {
   }
 
   return { group, spots, cover, update, dispose, cash: cashObj, lights, trees: trees.length };
+}
+
+// two crossed cards hanging from y = 0 down to y = -1 (one moss curtain)
+function mossCards() {
+  const a = new THREE.PlaneGeometry(1, 1);
+  a.translate(0, -0.5, 0);
+  const b = a.clone().rotateY(Math.PI / 2);
+  const g = mergeTwo(a, b);
+  a.dispose();
+  b.dispose();
+  return g;
 }
 
 // two plane geometries into one (the crossed grass card)
@@ -712,6 +813,110 @@ function grassTexture() {
     g.quadraticCurveTo(x + lean * 0.35 + w * 0.3, root - h * 0.55, x + w / 2, root);
     g.closePath();
     g.fill();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+// weathered horizontal boards (deck: lengthwise along the texture's x), grey-brown, grain, dark gaps, nail heads
+function plankTexture(base, seed, deckBoards = false) {
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = 512;
+  const g = c.getContext('2d');
+  const r = rng(seed);
+  const board = deckBoards ? 36 : 48; // px per board (2 m = 512 px)
+  for (let y = 0; y < 512; y += board) {
+    const k = 0.7 + r() * 0.45;
+    const grey = r() < 0.3 ? 0.85 : 1;
+    const col = base.map((v, i) => Math.round(v * k * (i === 2 ? 1 : grey)));
+    g.fillStyle = `rgb(${col[0]}, ${col[1]}, ${col[2]})`;
+    g.fillRect(0, y, 512, board);
+    // grain
+    for (let i = 0; i < 26; i++) {
+      const gy = y + 3 + r() * (board - 6);
+      g.strokeStyle = `rgba(30, 22, 14, ${0.08 + r() * 0.14})`;
+      g.lineWidth = 1 + r();
+      g.beginPath();
+      g.moveTo(0, gy);
+      for (let x = 0; x <= 512; x += 64) g.lineTo(x, gy + Math.sin(x * 0.02 + i) * 1.5);
+      g.stroke();
+    }
+    // butt joints and nails
+    let x = r() * 200;
+    while (x < 512) {
+      g.fillStyle = 'rgba(20, 15, 10, 0.75)';
+      g.fillRect(x, y, 2, board);
+      g.fillStyle = 'rgba(40, 32, 26, 0.9)';
+      g.fillRect(x + 5, y + 8, 3, 3);
+      g.fillRect(x + 5, y + board - 11, 3, 3);
+      x += 160 + r() * 260;
+    }
+    // the gap under the board
+    g.fillStyle = 'rgba(12, 9, 6, 0.85)';
+    g.fillRect(0, y + board - 3, 512, 3);
+  }
+  // damp, dark lower edge and a few stains
+  const grd = g.createLinearGradient(0, 380, 0, 512);
+  grd.addColorStop(0, 'rgba(20, 26, 14, 0)');
+  grd.addColorStop(1, 'rgba(20, 26, 14, 0.45)');
+  g.fillStyle = grd;
+  g.fillRect(0, 380, 512, 132);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+// corrugated tin: vertical ridges, panel seams, faded paint, rust running down from the top and the rivets
+function tinTexture(base, seed, rust = 0.5) {
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = 512;
+  const g = c.getContext('2d');
+  const r = rng(seed);
+  const img = g.createImageData(512, 512);
+  for (let y = 0; y < 512; y++) {
+    for (let x = 0; x < 512; x++) {
+      const ridge = 0.78 + 0.22 * Math.sin((x / 19.5) * Math.PI * 2);
+      const n = 0.9 + r() * 0.12;
+      const i = (y * 512 + x) * 4;
+      img.data[i] = base[0] * ridge * n;
+      img.data[i + 1] = base[1] * ridge * n;
+      img.data[i + 2] = base[2] * ridge * n;
+      img.data[i + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  // panel seams (overlaps) every ~0.9 m
+  for (let x = 0; x < 512; x += 230) {
+    g.fillStyle = 'rgba(20, 18, 16, 0.5)';
+    g.fillRect(x, 0, 3, 512);
+  }
+  // rust streaks from the top and from the rivet rows
+  for (let k = 0; k < 70 * rust; k++) {
+    const x = r() * 512;
+    const top = r() < 0.6 ? 0 : 60 + r() * 380;
+    const len = 40 + r() * 260;
+    const grd = g.createLinearGradient(0, top, 0, top + len);
+    grd.addColorStop(0, `rgba(${110 + r() * 40}, ${52 + r() * 20}, 24, ${0.35 + r() * 0.4})`);
+    grd.addColorStop(1, 'rgba(90, 44, 20, 0)');
+    g.fillStyle = grd;
+    g.fillRect(x, top, 3 + r() * 10, len);
+  }
+  // primer / bare patches
+  for (let k = 0; k < 10; k++) {
+    g.fillStyle = `rgba(${120 + r() * 30}, ${118 + r() * 20}, ${110 + r() * 20}, ${0.15 + r() * 0.25})`;
+    g.beginPath();
+    g.ellipse(r() * 512, r() * 512, 10 + r() * 40, 6 + r() * 30, r() * 3, 0, Math.PI * 2);
+    g.fill();
+  }
+  // rivet rows
+  for (const y of [40, 470]) {
+    for (let x = 10; x < 512; x += 39) {
+      g.fillStyle = 'rgba(60, 40, 28, 0.9)';
+      g.fillRect(x, y, 3, 3);
+    }
   }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;

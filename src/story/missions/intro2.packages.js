@@ -138,6 +138,7 @@ export default defineMission({
     {
       id: 'glades',
       text: 'Head for the Glades.',
+      gps: false,
       trigger: { reach: { at: PLACES.gladesMouth, r: 60, inVehicle: 'boat' } },
       fail: { vehicleDestroyed: 'boat' },
       auto: (ctx) => placeBoat(ctx.h.boat, PLACES.gladesMouth, Math.PI),

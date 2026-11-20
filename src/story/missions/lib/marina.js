@@ -61,6 +61,17 @@ export async function buildMarina(game, at) {
     m.rotation.y = yaw;
     group.add(m);
   }
+  // no plant grows through the pier or the boathouse while it stands
+  const veg = game.vegetation;
+  const blocks = [];
+  if (veg?.block) {
+    for (let d = start; d <= start + len; d += 6) {
+      const c = P(d);
+      blocks.push(veg.block(c.x, c.z, 4.5));
+    }
+    const bh = P(start + len * 0.45, -9.5);
+    blocks.push(veg.block(bh.x, bh.z, 9));
+  }
   game.scene.add(group);
   try {
     game.shaderWarmWrap?.(group);
@@ -83,6 +94,8 @@ export async function buildMarina(game, at) {
     shore: { ...P(start + 1), heading: h },
     pierEnd: { ...P(start + len - 1.5), y: deckY, heading: h },
     crew: { ...P(start + len - 5), y: deckY, heading: h + Math.PI },
+    // the crew's meeting spot on the pier, facing out to sea (cutscene frame)
+    meet: { ...P(start + len - 6), y: deckY, heading: h },
     boat: { ...P(start + len - 4, 4.2), heading: h },
     plane: { ...P(start + len + 14, 9), heading: h + Math.PI },
     planeApproach: { ...P(start + len + 320, 0), heading: h + Math.PI },
@@ -99,6 +112,8 @@ export async function buildMarina(game, at) {
       body = null;
     }
     group.parent?.remove(group);
+    for (const id of blocks) veg?.unblock?.(id);
+    blocks.length = 0;
   }
 
   return { group, spots, dispose };

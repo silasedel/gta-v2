@@ -17,6 +17,7 @@ import {
   spawnPlane,
   playerVehicle,
   standAt,
+  redLivery,
 } from './lib/intro.js';
 import { buildSwampCamp } from './lib/swampCamp.js';
 import { createCampCrew } from './lib/campCrew.js';
@@ -165,7 +166,10 @@ function rescue(ctx) {
       { at: 8.4, who: 'Nico', text: 'Can you run?', ms: 1200 },
       { at: 9.8, who: 'Cisco', text: 'Watch me.', ms: 1400 },
     ],
-    events: [{ at: 0.2, run: () => ctx.h.cisco?.setPose?.('sit') }],
+    events: [
+      { at: 0.2, run: () => ctx.h.cisco?.setPose?.('sitGround') },
+      { at: 7.6, run: () => ctx.h.cisco?.setPose?.('idle') },
+    ],
   };
 }
 
@@ -193,11 +197,15 @@ export default defineMission({
     if (b) b.intro2 = true;
     // Cisco on the chair inside (until he is freed), the floatplane at the far dock
     if (!fromStep || fromStep <= 2) {
-      ctx.spawnActor('cisco', { person: CAST.cisco, at: c.spots.cisco, pose: 'sit' });
+      ctx.spawnActor('cisco', { person: CAST.cisco, at: c.spots.cisco, pose: 'sitGround' });
     }
     await spawnPlane(ctx, 'plane', 'floatplane', PLACES.farDockWater, { keepOnPass: true });
+    redLivery(ctx, ctx.h.plane);
     shared.seaplane = ctx.h.plane;
     if (fromStep >= 1) givePistol(game);
+    // the gang at their posts (before the arrival, so the establishing shot has them); a retry of the escape
+    // makes an alerted crew in its checkpoint restore instead
+    if (!fromStep || fromStep < 4) makeCrew(ctx);
   },
   apply(story, how) {
     if (how === 'skip') givePistol(story.game);
@@ -209,21 +217,9 @@ export default defineMission({
       text: 'Sneak into the camp.',
       checkpoint: { at: { x: -2001, z: -708, heading: -Math.PI / 2 } },
       enter(ctx) {
-        const c = ctx.data.camp;
-        ctx.data.crew = createCampCrew(ctx, {
-          name: 'crew',
-          posts: posts(c),
-          groups: {
-            fire: { members: [], center: c.spots.fire, props: [], talk: true, spk: 0, spkT: 3 },
-          },
-          cover: (x, z) => c.cover(x, z),
-          onAlert: () => {
-            ctx.objective('Fight your way to the stilt shack.');
-            ctx.say('Lou', 'They made you. Move!', 2000);
-          },
-        });
         ctx.help('Stay in the grass and move slowly: they see less of you. A shot wakes the camp.');
       },
+      gps: false,
       onTick: (ctx, dt) => ctx.data.crew?.update(dt),
       trigger: { reach: { at: (ctx) => ctx.data.camp.spots.yardEdge, r: 6, onFoot: true } },
       auto(ctx) {
@@ -234,6 +230,7 @@ export default defineMission({
     {
       id: 'shack',
       text: 'Find Cisco in the stilt shack.',
+      gps: false,
       onTick: (ctx, dt) => ctx.data.crew?.update(dt),
       trigger: {
         interact: { at: (ctx) => ctx.data.camp.spots.cisco, r: 1.9, label: 'untie Cisco' },
@@ -257,6 +254,7 @@ export default defineMission({
     {
       id: 'escape',
       text: 'Get to the seaplane at the far dock.',
+      gps: false,
       checkpoint: {
         at: { x: -2074, y: 1.4, z: -712.4, heading: Math.PI },
         restore(ctx) {
@@ -281,7 +279,7 @@ export default defineMission({
       fail: { protect: 'cisco' },
       auto(ctx) {
         const d = ctx.data.camp.spots.dockEnd;
-        ctx.game.teleport(d.x, null, d.z - 1, 0);
+        standAt(ctx.game, { ...d, z: d.z - 1 });
       },
     },
   ],
@@ -289,6 +287,20 @@ export default defineMission({
     ctx.h.cisco?.remove?.();
   },
 });
+
+function makeCrew(ctx) {
+  const c = ctx.data.camp;
+  ctx.data.crew = createCampCrew(ctx, {
+    name: 'crew',
+    posts: posts(c),
+    groups: { fire: { members: [], center: c.spots.fire, props: [], talk: true, spk: 0, spkT: 3 } },
+    cover: (x, z) => c.cover(x, z),
+    onAlert: () => {
+      ctx.objective('Fight your way to the stilt shack.');
+      ctx.say('Lou', 'They made you. Move!', 2000);
+    },
+  });
+}
 
 // Cisco ran ahead: he waits at the end of the far dock by the plane
 function ciscoAtDock(ctx) {
