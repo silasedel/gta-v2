@@ -1,0 +1,10 @@
+{ "track": "intro2-prison", "title": "Intro v2: opening, prison cell, walk, counselor office (storyboard panels 1-4)", "section": "Story", "agent": "running",
+  "items": [
+    { "name": "Model intake: p194 counselor, p195 corrections officer, p196 cellmate, p197-p199 inmates, p200 payday-loan cashier (Models/NPCs/NPC 194-200, catalog.csv, rigged by tools/v2/npcs/build.sh)", "state": "verified", "evidence": "docs/v2/shots/intro2/p2_cell_play.png" },
+    { "name": "Prison set (cell, cell block corridor, dayroom, counselor office): built per mission, shared by the chained missions, disposed when released and left", "state": "built", "evidence": "docs/v2/shots/intro2/report.json" },
+    { "name": "intro2.opening: night street meeting (panel 1) and the cut to the prison", "state": "built", "evidence": "docs/v2/shots/intro2/p1_ots_mari.png" },
+    { "name": "intro2.prisonCell: playable cell, talk to Dolores, the guard opens the door (panel 2)", "state": "built", "evidence": "docs/v2/shots/intro2/p2_cell_ots.png" },
+    { "name": "intro2.prisonWalk: follow the guard down the corridor (panel 3)", "state": "built", "evidence": "docs/v2/shots/intro2/p3_walk_corridor.png" },
+    { "name": "intro2.counselor1: office interview cutscene into the flashback (panel 4); reusable office for intro2.counselor2", "state": "built", "evidence": "docs/v2/shots/intro2/p4_ots_counselor.png" },
+    { "name": "End-to-end test tool tools/v2/story/intro2-test.mjs", "state": "built", "evidence": "docs/v2/shots/intro2/report.json" }
+  ] }

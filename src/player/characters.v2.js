@@ -415,6 +415,23 @@ export async function initV2(game) {
     switchTo,
     call,
     callScript,
+    // story hook (intro v2 cutscenes): stand the character you are NOT playing at a spot { x, y?, z, heading }, idle and
+    // out of any car. Returns the double's model root (for camera targets), or null when that one is the player.
+    stage(id, at) {
+      const c = R[id];
+      if (!c || id === activeId || !c.double || !at) return null;
+      c.follow = false;
+      c.double.setMode('idle');
+      c.double.place(at.x, at.y ?? null, at.z, at.heading || 0);
+      c.rec = {
+        ...(c.rec || freshRecord(id)),
+        pos: [at.x, at.y ?? null, at.z],
+        heading: at.heading || 0,
+      };
+      c.rec.vehRef = null;
+      c.rec.veh = null;
+      return c.char?.root || null;
+    },
     summon: (id) => setFollow(id, true),
     dismiss: (id) => setFollow(id, false),
     ready: () => ensureMari(),

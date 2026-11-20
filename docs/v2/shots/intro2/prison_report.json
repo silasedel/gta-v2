@@ -1,0 +1,37 @@
+{
+ "missions": {
+  "intro2.opening": "pass",
+  "intro2.prisonCell": "pass",
+  "intro2.prisonWalk": "pass",
+  "intro2.counselor1": "pass"
+ },
+ "shots": [
+  "docs/v2/shots/intro2/p1_wide.png",
+  "docs/v2/shots/intro2/p1_ots_mari.png",
+  "docs/v2/shots/intro2/p1_ots_nico.png",
+  "docs/v2/shots/intro2/p1_close_mari.png",
+  "docs/v2/shots/intro2/p1_twoshot.png",
+  "docs/v2/shots/intro2/p1_close_nico.png",
+  "docs/v2/shots/intro2/p1_crane.png",
+  "docs/v2/shots/intro2/p1b_card_corridor.png",
+  "docs/v2/shots/intro2/p1b_cell_door.png",
+  "docs/v2/shots/intro2/p1b_cell_window.png",
+  "docs/v2/shots/intro2/p2_cell_play.png",
+  "docs/v2/shots/intro2/p2_cell_prompt.png",
+  "docs/v2/shots/intro2/p2_cell_ots.png",
+  "docs/v2/shots/intro2/p2_cell_dolores.png",
+  "docs/v2/shots/intro2/p2_cell_mari.png",
+  "docs/v2/shots/intro2/p2_cell_door.png",
+  "docs/v2/shots/intro2/p2_cell_guard.png",
+  "docs/v2/shots/intro2/p3_walk_start.png",
+  "docs/v2/shots/intro2/p3_walk_dayroom.png",
+  "docs/v2/shots/intro2/p3_office_door.png",
+  "docs/v2/shots/intro2/p4_office_wide.png",
+  "docs/v2/shots/intro2/p4_ots_counselor.png",
+  "docs/v2/shots/intro2/p4_ots_mari.png",
+  "docs/v2/shots/intro2/p4_ots_counselor2.png",
+  "docs/v2/shots/intro2/p4_mari.png"
+ ],
+ "errors": [],
+ "setAfterLeaving": 0
+}
