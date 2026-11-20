@@ -2799,10 +2799,12 @@ export async function createVehicles(game) {
     // User (Nov 19, afternoon): the gray off-road pickup stays in the drive, and the yellow coupe-utility takes the old blue
     // classic's spot (the blue car is gone). The truck uses the open sandy pad in front of the stairs / lattice that was
     // checked clear for the ute (house frame after the r10 10 degree turn), nose to the street (+Z).
+    // Front-door view (Nov 19, docs/v2/plan/nico_house/front_door_south_view_TARGET.webp; nicoHouse yard.data.js CAR_SPOTS): the
+    // truck sits in the dirt right below the front walkway, pulled in sideways, nose toward the deck.
     {
       key: 'truck9',
-      local: [-1.3, 7.5],
-      heading: 0,
+      local: [-13.96, 2.02],
+      heading: 1.734,
       color: 0x9a9ea3,
       finish: 'metallic',
       wear: { dirt: 0.16, rust: 0, fade: 0, dirtColor: 'sand' },
@@ -2819,15 +2821,26 @@ export async function createVehicles(game) {
     },
     // Nico's yellow coupe-utility (ute1, mock-ups docs/v2/plan/nico_car), where the faded blue classic used to sit.
     // The orange-red hood band / hockey stick / flank band is cut into the model (tools/v2/cars/ute1), so no shader stripe.
+    // Front-door view: the ute in the small dirt spot beside the truck.
     {
       key: 'ute1',
-      local: [-18.8, 5.5],
-      heading: 1.03,
+      local: [-19.07, -4.82],
+      heading: 1.734,
       ...NICO_UTE_SCHEME,
       color: 0xf4a40a,
       wear: { dirt: 0.03, rust: 0, fade: 0, dirtColor: 'sand' },
       stripe: null,
       tint: 0,
+    },
+    // Front-door view: a neighbor's dark pickup parked behind the lattice fence, left of Nico's drive (locked, not Nico's).
+    {
+      key: 'truck2',
+      local: [-8.88, 11.32],
+      heading: -2.002,
+      color: 0x1e2124,
+      finish: 'metallic',
+      wear: { dirt: 0.12, rust: 0, fade: 0.05, dirtColor: 'sand' },
+      neighbor: true,
     },
   ];
   const nicoCars = [];
@@ -2848,7 +2861,7 @@ export async function createVehicles(game) {
       addNoParkZone(p.x, p.z, r);
     }
     // the neighbors: a sedan under a cover in the next yard, the old graffiti van rusting on the lot across the lane
-    for (const [k, lx, lz, h] of [['covered1', -22.9, -3.5, -0.37]]) {
+    for (const [k, lx, lz, h] of [['covered1', -20.87, -15.39, -0.37]]) {
       // spots from r2-keys (rotated house, mock-up frame)
       const p = NH.toWorld(new THREE.Vector3(lx, 0, lz));
       try {
@@ -2873,7 +2886,7 @@ export async function createVehicles(game) {
           color: c.color,
           wear: c.wear,
           finish: c.finish,
-          locked: false,
+          locked: !!c.neighbor,
           stripe: c.stripe || null,
           interior: c.interior,
           ride: c.ride,
@@ -2881,7 +2894,7 @@ export async function createVehicles(game) {
           tint: c.tint,
           keepSpot: true,
         });
-        if (v) {
+        if (v && !c.neighbor) {
           v.playerOwned = true;
           v.locked = false;
         }

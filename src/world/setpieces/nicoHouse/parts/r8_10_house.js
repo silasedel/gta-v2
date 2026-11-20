@@ -1601,8 +1601,9 @@ export function build(ctx) {
   // the spawn stays where it was in the yard (site frame; turning it with the house put it on the yellow ute's spot), facing
   // the front door
   {
-    const sx = -17,
-      sz = 2.5,
+    // front-door view (Nov 19): on the drive beside the pickup's nose (the pickup now stands where the spawn was)
+    const sx = -8.79,
+      sz = 1.97,
       [dx, dz] = BtoH(Bd.x0 - 0.5, -7);
     frame(ctx, 'site').anchor('spawnYard', sx, 0, sz, Math.atan2(dx - sx, dz - sz));
   }

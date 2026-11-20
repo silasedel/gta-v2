@@ -1243,10 +1243,11 @@ export function build(ctx) {
         .catch(() => {}),
     );
   }
-  // the tall bunch grass with purple flowers on the grassy island in the drive's curve (B), beside the silver can
+  // the tall bunch grass with purple flowers (B); front-door view (Nov 19): the drive island is gone, the clumps grow by the rocks
+  // at the right edge of the dirt
   for (const [gx, gz, gs] of [
-    [-11.0, 0.7, 1.0],
-    [-11.9, 1.6, 0.8],
+    [-24.46, 1.52, 1.0],
+    [-18.86, 4.25, 0.8],
   ]) {
     const gy = ctx.yardY ? ctx.yardY(...Fs.toG(gx, gz)) : 0,
       GR = mat.plastic(),

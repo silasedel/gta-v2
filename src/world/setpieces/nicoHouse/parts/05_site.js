@@ -887,15 +887,8 @@ export function build(ctx) {
               );
             }
           }
-        for (let t = 0; t < len; t += 0.5)
-          if (Math.sin(t * 1.9 + ax * 0.7) + Math.sin(t * 0.83 + az) > -0.4)
-            put(
-              ax + ((bx - ax) * t) / len + (q() - 0.5) * 0.4,
-              az + ((bz - az) * t) / len + (q() - 0.5) * 0.4,
-              0.7 + q() * 0.4,
-            );
       }
-    } // the hump between the ruts, in runs
+    } // front-door view (Nov 19, user: the drive is matted down and clean): no weed runs on the hump between the ruts
     if (wallN) line(L.x0 - 20, L.z0 + 0.7, L.x1 - 0.5, L.z0 + 0.7, 260, 0.8, 1.2);
     if (wallE) line(L.x1 - 0.7, L.z0, L.x1 - 0.7, L.z1 + 15, 300, 0.8, 1.2); // only along a seawall line(-13.5, 6.6 + P.stairW.dz, -9.5, 6.9 + P.stairW.dz, 40, 0.5); line(-12.2, 2.8 + P.stairW.dz, -12.2, 4.4 + P.stairW.dz, 20, 0.3);   // west stair foot / landing (moved)
     for (const [wx, wz, wr, wn, ws] of WEEDS)

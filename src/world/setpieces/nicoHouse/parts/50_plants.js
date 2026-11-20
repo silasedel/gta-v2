@@ -2504,9 +2504,10 @@ gl_Position = projectionMatrix * mvPosition;
     col.cyl(x, 0.6, z, 0.16, 1.2, { tag: 'tree' });
   };
   buttonwood(-19.4, -7.6, 3.1, 51);
-  buttonwood(-12.5, 20.5, 2.5, 52);
-  buttonwood(-23.0, 0.5, 2.1, 53);
-  buttonwood(-14.7, -1.6, 2.3, 54);
+  // front-door view (Nov 19): out of the paved road, the open grass by the pickup and the boat; they screen the canal side
+  buttonwood(-2.81, 17.2, 2.5, 52);
+  buttonwood(-25.02, -2.5, 2.1, 53);
+  buttonwood(2.2, 17.33, 2.3, 54);
   // crotons and ti plants toward the street
   {
     const r = kit.rng(55);

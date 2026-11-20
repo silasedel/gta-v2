@@ -2,7 +2,7 @@
 // (`setpieces.nico_house`: x, z, heading), builds the self-contained set piece there, creates its Rapier colliders,
 // feeds its lights to the clustered lamp system and runs its interactions (E). Nothing here hard-codes world coordinates.
 import { buildNicoHouse, PLAN } from './index.js';
-import { CAR_SPOTS, PLANTING, LITTER, DRIVE, DRIVE_PUDDLE } from './yard.data.js';
+import { CAR_SPOTS, PLANTING, LITTER, DRIVE, DRIVE_PUDDLE, FRONT_ROAD } from './yard.data.js';
 import { patchPuddles } from '../../ground/puddles.js';
 import { lots as houseLots } from '../houses/lots.js';
 import { R4, R8, P4, toS, plantClear, HtoG, BtoG, GtoH } from './r4/plan4.js';
@@ -100,6 +100,29 @@ export async function initV2(game) {
         hd: (L.z1 - L.z0) / 2,
         ry: spot.heading || 0,
         id: 'nico_house',
+      });
+      // front-door view (Nov 19): the paved road across the front (yard.data.js FRONT_ROAD) stays clear of lots and scatter
+      (FRONT_ROAD?.paths || []).forEach((path, pi) => {
+        const P = path.pts;
+        for (let i = 0; i < P.length - 1; i++) {
+          const [ax, az] = P[i];
+          const [bx, bz] = P[i + 1];
+          const len = Math.hypot(bx - ax, bz - az);
+          const mx = (ax + bx) / 2;
+          const mz = (az + bz) / 2;
+          const ux = (bx - ax) / len;
+          const uz = (bz - az) / len;
+          const dwx = ux * c + uz * s;
+          const dwz = -ux * s + uz * c;
+          houseLots.reserve({
+            x: spot.x + mx * c + mz * s,
+            z: spot.z - mx * s + mz * c,
+            hw: len / 2 + 0.5,
+            hd: FRONT_ROAD.halfWidth + 0.8,
+            ry: Math.atan2(-dwz, dwx),
+            id: 'nico_front_road_' + pi + '_' + i,
+          });
+        }
       });
     } catch (e) {
       /* lots module off */
@@ -216,8 +239,31 @@ export async function initV2(game) {
         return !!game.city.isWater(x, z);
       }
     : null;
+  // front-door view (Nov 19): the set piece's own paved road across the front (yard.data.js FRONT_ROAD, part r14_57_frontroad);
+  // distance from its asphalt edge in the yard frame (negative on the road)
+  const frontRoadDist = (lx, lz) => {
+    if (!FRONT_ROAD) {
+      return 1e9;
+    }
+    let best = 1e9;
+    for (const path of FRONT_ROAD.paths) {
+      const P = path.pts;
+      for (let i = 0; i < P.length - 1; i++) {
+        const [ax, az] = P[i];
+        const [bx, bz] = P[i + 1];
+        const dx = bx - ax;
+        const dz = bz - az;
+        const t = Math.max(0, Math.min(1, ((lx - ax) * dx + (lz - az) * dz) / (dx * dx + dz * dz)));
+        best = Math.min(best, Math.hypot(lx - ax - dx * t, lz - az - dz * t));
+      }
+    }
+    return best - FRONT_ROAD.halfWidth;
+  };
   // road ribbons (lead review): yard plants and weeds are rejected at the source inside any lane (+ pad), not only by the shader mask
   const roadClear = (lx, lz, pad = 0.3) => {
+    if (frontRoadDist(lx, lz) <= pad) {
+      return false;
+    }
     const [x, z] = toW(lx, lz);
     let r = null;
     try {
@@ -231,14 +277,15 @@ export async function initV2(game) {
   // r2-keys: distance from the nearest asphalt edge (m, negative on the road); the yard sheet sinks under the road edges with it
   const roadDist = (lx, lz) => {
     const [x, z] = toW(lx, lz);
+    const own = frontRoadDist(lx, lz);
     let r = null;
     try {
       r = game.city?.roadGraph?.nearestEdge?.(x, z, {}, 25);
     } catch (e) {
       /* */
     }
-    if (!r || !r.edge) return 25;
-    return Math.hypot(r.point.x - x, r.point.z - z) - r.edge.width / 2;
+    if (!r || !r.edge) return Math.min(25, own);
+    return Math.min(own, Math.hypot(r.point.x - x, r.point.z - z) - r.edge.width / 2);
   };
   const groundAt = (lx, lz) => {
     const [x, z] = toW(lx, lz);
@@ -501,6 +548,7 @@ export async function initV2(game) {
   if (!KEYS_OFF)
     try {
       plantYard(game, g);
+      blockFrontRoad(game, g);
     } catch (e) {
       console.warn('[nicoHouse] planting', e);
     }
@@ -729,4 +777,29 @@ function plantYard(game, g) {
         console.warn('[nicoHouse] field', kind, e);
       }
     }
+}
+
+// front-door view (Nov 19): no scattered plant grows on the set piece's paved road (yard.data.js FRONT_ROAD)
+function blockFrontRoad(game, g) {
+  const V = game.vegetation;
+  if (!V?.block || !FRONT_ROAD) {
+    return;
+  }
+  const T = game.THREE;
+  const r = FRONT_ROAD.halfWidth + 0.6;
+  const p = new T.Vector3();
+  for (const path of FRONT_ROAD.paths) {
+    const P = path.pts;
+    for (let i = 0; i < P.length - 1; i++) {
+      const [ax, az] = P[i];
+      const [bx, bz] = P[i + 1];
+      const len = Math.hypot(bx - ax, bz - az);
+      for (let t = 0; t <= len; t += r) {
+        p.set(ax + ((bx - ax) * t) / len, 0, az + ((bz - az) * t) / len).applyMatrix4(
+          g.matrixWorld,
+        );
+        V.block(p.x, p.z, r);
+      }
+    }
+  }
 }

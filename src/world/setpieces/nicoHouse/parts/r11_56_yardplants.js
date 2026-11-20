@@ -61,6 +61,8 @@ function spotIsClear(ctx, x, z, kind, s) {
   const drive = ctx.driveD ? ctx.driveD(x, z) : 1e9;
   if (drive < 2.2 + 0.6 + r * 0.5) return false;
   if (plantClear(...toS(x, z), r * 0.6)) return false;
+  // front-door view (Nov 19): nothing on the asphalt (the set piece's own road across the front included)
+  if (ctx.opts.roadClear && !ctx.opts.roadClear(x, z, r * 0.5)) return false;
   return !hitsCollider(ctx, x, z, r * 0.4);
 }
 

@@ -55,23 +55,25 @@ export const KEYS_LOTS = [
     car: { kind: 'sedan', look: 'faded', u: 6.4, v: 6.0, h: Math.PI },
   },
   {
-    // B: yellow stilt house across the corner, chain-link, a center console on its trailer in the side yard
+    // B: across the new paved road from Nico's front door (Nov 19, front_door_south_view_TARGET): a light green single-story
+    // bungalow with a dark roof, a board fence along the road and a hedge, palms and red poincianas round it (Nico's PLANTING)
+    // (was the yellow stilt house; the id is kept)
     id: 'pp_yellow',
-    x: -13.5,
-    z: 41.6,
-    face: 2.82,
-    w: 8.6,
-    d: 7.8,
+    x: 5.71,
+    z: 36.23,
+    face: -2.9,
+    w: 9.0,
+    d: 7.6,
     style: 'keys',
-    stilt: true,
-    base: 2.9,
-    gap: 7.0,
+    stilt: false,
+    base: 0.6,
+    gap: 5.0,
     side: 4.5,
     back: 5,
     over: {
-      colors: { body: 0xf0d890, trim: 0xf2f0ea, accent: 0x4a6a7a, roof: 0x9aa0a8 },
-      fence: 'chain',
-      frontHedge: false,
+      colors: { body: 0xa9cf9c, trim: 0xf2f0ea, accent: 0x3d5a46, roof: 0x34383d },
+      fence: 'wood',
+      frontHedge: true,
       hedge: true,
       car: false,
       bins: true,
@@ -82,7 +84,6 @@ export const KEYS_LOTS = [
       dish: true,
     },
     extras: [
-      { k: 'boatTrailer', u: -7.2, v: 0.5, h: 0.05, seed: 3 },
       { k: 'crabTraps', u: 5.8, v: -3.5, h: 0.4 },
       { k: 'buoys', u: 6.4, v: -2.4 },
     ],

@@ -22,6 +22,7 @@ import {
   CAR_SPOTS,
   CORNER_PUDDLE,
   STICKS,
+  DRIVE,
 } from '../yard.data.js';
 import { loadKeysModels } from '../models.js';
 import { R4, R8, toS, plantClear } from '../r4/plan4.js';
@@ -1038,8 +1039,9 @@ export function build(ctx) {
         },
         { srgb: false },
       );
+    // front-door view (Nov 19): murky gray-brown shallow water (0x2a2620 read as a navy stain from the deck)
     const PUD = new THREE.MeshStandardMaterial({
-      color: 0x2a2620,
+      color: 0x6e675c,
       roughness: 0.05,
       metalness: 0,
       transparent: true,
@@ -1264,14 +1266,9 @@ export function build(ctx) {
   // user (Nov 18): "there shouldn't be rocks in the road". The yard rocks were laid out for the old lot; on the new Keys lot
   // (r4-keys: local x -24..11.4, z -14.2..33, driveway straight out along +Z at x = -6) drop any outside the lot or on the drive
   const STOPS_OK = []; // the yard STOP signs marked the OLD lot's T corner; on the new Keys lot the street signs come from the road sign system (user: a stop sign in the middle of the sand)
+  // front-door view (Nov 19): the rocks line the right edge of the dirt; only the ones in the house footprint or on the drive drop
   const ROCKS_OK = ROCKS.filter(
-    ([x, z]) =>
-      !r4Blocked(x, z, 0.5) &&
-      x > -23.5 &&
-      x < 11 &&
-      z > -13.8 &&
-      z < 32.2 &&
-      !(Math.abs(x + 6) < 3.4 && z > 16),
+    ([x, z]) => !r4Blocked(x, z, 0.5) && !(ctx.driveD && ctx.driveD(x, z) < DRIVE.halfWidth + 0.2),
   );
   for (const [x, z, k, sc, h, sink] of ROCKS_OK) {
     const q = ROCK_SZ[[0, 1, 2, 0, 1, 2][(k - 1) % 6]];
