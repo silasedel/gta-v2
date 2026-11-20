@@ -138,6 +138,8 @@ export class Batch {
     this.vert(x1, y, z0, 0, 1, 0, x1 * s, z0 * s, col);
   }
   get empty() {
+    // memory pass (Nov 19): no typed views built just to read the vertex count
+    if (BATCH_F64 && !this._plain) return this._sv === 0;
     return this.p.length === 0;
   }
   _view(k) {

@@ -21,6 +21,12 @@ export function canalDepth(C, x, z) {
   return 2.0 + 0.5 * s + 0.08 * n;
 }
 
+// true when (x, z) is clearly outside the box (with pad and a 2 m safety margin)
+function outsideBox(b, x, z, pad) {
+  const m = pad + 2;
+  return x < b[0] - m || x > b[2] + m || z < b[1] - m || z > b[3] + m;
+}
+
 export function installCanal(game, o) {
   const { RAPIER: R, world: W, THREE } = game;
   const city = game.city;
@@ -35,15 +41,43 @@ export function installCanal(game, o) {
     hz0 = o.wallZ - 1.0,
     hz1 = C.z1 - 0.12;
   const inH = (x, z, pad = 0) => x > hx0 - pad && x < hx1 + pad && z > hz0 - pad && z < hz1 + pad;
-  const inside = (x, z, pad = 0) => {
-    const [hx, hz] = toH(x, z);
-    return inH(hx, hz, pad);
-  };
+  // world AABB of the channel and the bay strip (corners of both H-frame boxes through toWorld)
+  function worldBox() {
+    const b = [Infinity, Infinity, -Infinity, -Infinity];
+    const boxes = [[hx0, hz0, hx1, hz1]];
+    if (o.bay) {
+      boxes.push([o.bay.x0, o.bay.z0, o.bay.x1, o.bay.z1]);
+    }
+    for (const [a0, c0, a1, c1] of boxes) {
+      for (const [hx, hz] of [
+        [a0, c0],
+        [a1, c0],
+        [a1, c1],
+        [a0, c1],
+      ]) {
+        const [x, z] = toWorld(hx, hz);
+        b[0] = Math.min(b[0], x);
+        b[1] = Math.min(b[1], z);
+        b[2] = Math.max(b[2], x);
+        b[3] = Math.max(b[3], z);
+      }
+    }
+    return b;
+  }
   // the bay strip past Nico's bay wall, where the set piece draws water over the map's old beach (o.bay, H frame): water for the
   // city queries too, so grass, plants and scatter never grow there (r12: a grass clump stood in the bay beside the skiff)
   const B = o.bay;
+  // perf (Nov 19, memory pass): city.isWater runs for every grass / plant / scatter probe in the whole world and toH()
+  // allocates an array per call. A world-space box around the channel and the bay strip rejects almost every call first.
+  const near = worldBox();
+  const inside = (x, z, pad = 0) => {
+    if (outsideBox(near, x, z, pad)) return false;
+    const [hx, hz] = toH(x, z);
+    return inH(hx, hz, pad);
+  };
   const inBay = (x, z) => {
     if (!B) return false;
+    if (outsideBox(near, x, z, 0)) return false;
     const [hx, hz] = toH(x, z);
     return hx > B.x0 && hx < B.x1 && hz > B.z0 && hz < B.z1;
   };

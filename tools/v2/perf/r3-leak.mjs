@@ -144,7 +144,7 @@ const SAMPLE = `(() => {
 
 await withBrowser({ width: 1280, height: 720, maxSeconds: SECS + 900 }, async (b) => {
   await b.send('Page.addScriptToEvaluateOnNewDocument', { source: INSTR });
-  await b.goto('http://127.0.0.1:5200/?mute' + (o.q || ''));
+  await b.goto((o.url || 'http://127.0.0.1:5200') + '/?mute' + (o.q || ''));
   await b.waitFor(GAME_READY + " && typeof game.teleport === 'function'", 480);
   if (!(await startGame(b))) console.log('WARN: title did not close');
   await b.eval(

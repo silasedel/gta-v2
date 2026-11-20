@@ -13345,16 +13345,36 @@ export function createTileBuilder(ctx) {
             if (++ns % 300 === 0) yield;
           }
         }
-        for (const a of tile.areas || [])
+        // stream hitches (Nov 19): time-based yields inside the per-tile loops (a whole tile's areas, sidewalks or
+        // roads in one step took 100+ ms downtown)
+        let tY = performance.now();
+        for (const a of tile.areas || []) {
           if (a.kind !== 'land' && !synthArea(a))
             fillPoly(b, a.rings, AREA_Y[a.kind] ?? 0.01, MID_COL[a.kind] ?? 0x8c8a84, 0);
+          if (performance.now() - tY > 4) {
+            yield;
+            tY = performance.now();
+          }
+        }
         yield;
-        for (const rings of sidewalksOf(tile)) fillPoly(b, rings, CURB, 0xc8c4bc, 0);
+        tY = performance.now();
+        for (const rings of sidewalksOf(tile)) {
+          fillPoly(b, rings, CURB, 0xc8c4bc, 0);
+          if (performance.now() - tY > 4) {
+            yield;
+            tY = performance.now();
+          }
+        }
         yield;
+        tY = performance.now();
         for (const pq of tile.piers || []) fillPoly(b, pq.rings, pq.y ?? 1.2, 0x8b6a4a, 0);
         const lodE = !!(elevated && elevated.buildTileLod);
         for (const r of tile.roads) {
           if (r.pts.length < 2 || (lodE && owned(r))) continue;
+          if (performance.now() - tY > 4) {
+            yield;
+            tY = performance.now();
+          }
           const pr = roadProfile(r, tile);
           ribbon(b, polyFrame(pr.pts), pr.ys, -r.width / 2, r.width / 2, 0.05, 0x3a3a3c, 0);
           if (pr.ys)
@@ -13644,6 +13664,37 @@ export function createTileBuilder(ctx) {
   }
 
   // ---------------- COLLIDERS: trimesh per tile (roads/sidewalks/curbs/intersections + building shells) ----------------
+  // A growable Float32 triangle soup (memory pass, Nov 19). The soups were plain JS arrays of boxed numbers, copied
+  // twice more on commit (slice, then Float32Array): buildColliders was the top allocator while streaming.
+  class ColSoup {
+    constructor() {
+      this.a = new Float32Array(9 * 1024);
+      this.length = 0;
+      this._tag = null;
+    }
+    grow(n) {
+      if (this.length + n <= this.a.length) return;
+      const b = new Float32Array(Math.max(this.a.length * 2, this.length + n));
+      b.set(this.a.subarray(0, this.length));
+      this.a = b;
+    }
+    // push(v0, v1, ...): any number of values, like Array.prototype.push
+    push() {
+      const n = arguments.length;
+      this.grow(n);
+      for (let k = 0; k < n; k++) this.a[this.length + k] = arguments[k];
+      this.length += n;
+    }
+    pushRange(src, start, n) {
+      this.grow(n);
+      for (let k = 0; k < n; k++) this.a[this.length + k] = src[start + k];
+      this.length += n;
+    }
+    // a fresh Float32Array of [from, to) (Rapier keeps its own copy, but the caller may reuse the soup afterwards)
+    copy(from, to) {
+      return this.a.slice(from, to);
+    }
+  }
   const colStats = { n: 0, max: 0 },
     colTags = new Map();
   // debugging aid for other agents: which CITY generator owns the static geometry at a point (props of collider-built tiles + buildings)
@@ -13697,13 +13748,13 @@ export function createTileBuilder(ctx) {
     }
     const LFc = !!(tile.relief && D); // relief tile: road / building collider vertices are raised onto the terrain like the render
     // trimesh from a triangle soup; drops degenerate / non-finite triangles (they can make parry panic in ray/shape casts)
-    const ground = [],
-      solid = [];
+    const ground = new ColSoup(),
+      solid = new ColSoup();
     // audit mode (ctx.auditTags): every collider source gets its own trimesh, tagged in colTags (handle -> source)
     const audit = !!ctx.auditTags,
       soups = new Map(),
       soupOf = (tag) => {
-        if (!soups.has(tag)) soups.set(tag, []);
+        if (!soups.has(tag)) soups.set(tag, new ColSoup());
         return soups.get(tag);
       };
     const add = (batch, out = ground, dk = null) => {
@@ -13728,14 +13779,14 @@ export function createTileBuilder(ctx) {
           nz = bx * cy - by * cx,
           a2 = nx * nx + ny * ny + nz * nz;
         if (!(a2 > 1e-8) || !Number.isFinite(a2 + ax + ay + az)) continue;
-        for (let k = 0; k < 9; k++) out.push(P[i + k]);
+        out.pushRange(P, i, 9);
       }
     };
     // one trimesh per soup, split only above MAX_TRI so each createCollider (BVH build) stays ~1-3 ms
     const MAX_TRI = 6000;
     function* commit(out) {
       for (let t0 = 0; t0 < out.length; t0 += MAX_TRI * 9) {
-        const v = new Float32Array(out.slice(t0, Math.min(out.length, t0 + MAX_TRI * 9)));
+        const v = out.copy(t0, Math.min(out.length, t0 + MAX_TRI * 9));
         if (v.length < 9) continue;
         const idx = new Uint32Array(v.length / 3);
         for (let i = 0; i < idx.length; i++) idx[i] = i;
@@ -13803,7 +13854,7 @@ export function createTileBuilder(ctx) {
         });
       if (tr) {
         const C3 = tr.coll;
-        for (let i = 0; i < C3.length; i++) ground.push(C3[i]);
+        ground.pushRange(C3, 0, C3.length);
         tr.geometry.dispose();
       }
     } // same vertices as the rendered terrain
