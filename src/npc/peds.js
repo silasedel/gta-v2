@@ -109,11 +109,34 @@ export async function createPeds(game) {
   const groundAt = (x, z, fallback = 0) => {
     try {
       const g = city.groundHeightAt?.(x, z, fallback + 1.2);
-      return Number.isFinite(g) ? g : fallback;
+      return Number.isFinite(g) ? surfaceNear(x, z, g) : fallback;
     } catch (e) {
       return fallback;
     }
   };
+  // physics-audit (Nov 19, user: "an NPC halfway through the ground"): groundHeightAt is the map's height function
+  // (bilinear 16 m grid, flat road / curb offsets), while the drawn ground is the collider surface (4 m terrain
+  // triangles, raised lots and yards, sloped shores). Where the static collider is built, a short downward ray takes
+  // its top when it lies within 0.4 m of the map height (so a bin, bench or car roof never lifts anyone).
+  let _sRay = null;
+  function surfaceNear(x, z, g) {
+    const R = game.RAPIER;
+    if (!R || !world) return g;
+    if (!_sRay) _sRay = new R.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 });
+    _sRay.origin.x = x;
+    _sRay.origin.y = g + 0.45;
+    _sRay.origin.z = z;
+    const QF = R.QueryFilterFlags;
+    const hit = world.castRay(
+      _sRay,
+      0.9,
+      true,
+      QF.EXCLUDE_DYNAMIC | QF.EXCLUDE_KINEMATIC | QF.EXCLUDE_SENSORS,
+    );
+    // no surface there, or the ray starts inside a solid (a planter, a step block): keep the map height
+    if (!hit || hit.timeOfImpact < 0.01) return g;
+    return g + 0.45 - hit.timeOfImpact;
+  }
   const isWater = (x, z) => {
     try {
       return !!city.isWater?.(x, z);
@@ -3827,6 +3850,7 @@ export async function createPeds(game) {
   return {
     list,
     update,
+    groundSnap: true, // physics-audit: groundAt snaps to the collider top (tools/v2/physics/phantomsPage.js reads it)
     panic,
     damage,
     spawnAt,

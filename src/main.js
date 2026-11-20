@@ -398,6 +398,37 @@ async function boot() {
   P.waterDepth = 0;
   const QF = RAPIER.QueryFilterFlags;
   const STATIC_ONLY = QF.EXCLUDE_DYNAMIC | QF.EXCLUDE_KINEMATIC | QF.EXCLUDE_SENSORS;
+  // physics-audit (Nov 19, user: "submerged and stuck in the sand going up a hill"): once the capsule has slipped
+  // more than ~0.45 m under a terrain trimesh, the per-frame de-penetration below no longer reaches it and the
+  // ground is a ceiling from underneath. When the city says the ground here is well above the feet and a static
+  // surface agrees with it, lift the capsule onto that surface (only if it fits there). Returns the new center y.
+  const unstuckRay = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 });
+  const unstuckShape = new RAPIER.Capsule(CAP_HALF, CAP_R);
+  const unstuckRot = { x: 0, y: 0, z: 0, w: 1 };
+  function liftOutOfGround(x, cy, z) {
+    const feet = cy - CENTER;
+    const gha = game.city?.groundHeightAt?.(x, z, feet);
+    if (!Number.isFinite(gha) || gha - feet < 0.3 || gha - feet > 4) return cy;
+    unstuckRay.origin.x = x;
+    unstuckRay.origin.y = gha + 1.5;
+    unstuckRay.origin.z = z;
+    const hit = world.castRayAndGetNormal(unstuckRay, 3, true, STATIC_ONLY, undefined, pCol);
+    if (!hit || hit.normal.y < 0.5) return cy;
+    const top = gha + 1.5 - hit.timeOfImpact;
+    if (Math.abs(top - gha) > 0.35 || top - feet < 0.3) return cy;
+    const liftY = top + CENTER + 0.08; // clear of a 35 deg slope under the round bottom
+    const blocked = world.intersectionWithShape(
+      { x, y: liftY, z },
+      unstuckRot,
+      unstuckShape,
+      STATIC_ONLY,
+      undefined,
+      pCol,
+    );
+    if (blocked) return cy;
+    L.unstuckN = (L.unstuckN || 0) + 1;
+    return liftY;
+  }
   game.on('footstep', (e) => {
     if (e && e.src !== 'main') L.lastCharStep = game.clock.elapsed;
   });
@@ -756,6 +787,13 @@ async function boot() {
         if (pen > 0.004 && pen < 0.45) ny += pen;
         // feet within 8 cm of static ground counts as grounded (KCC's flag misses some streamed trimesh ground)
         rayGround = ny - CENTER - groundTop < 0.08;
+      }
+      if (!swim) {
+        const lifted = liftOutOfGround(nx, ny, nz);
+        if (lifted !== ny) {
+          ny = lifted;
+          rayGround = true;
+        }
       }
     }
     pBody.setNextKinematicTranslation({ x: nx, y: ny, z: nz });
