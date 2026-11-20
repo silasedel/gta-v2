@@ -1220,6 +1220,8 @@ async function boot() {
     return _occList;
   }
   function updateCamera(dt) {
+    // game.smoothCam (runtime A/B for the jitter probe) overrides the ?smoothcam URL flag
+    const smoothCam = game.smoothCam ?? SMOOTHCAM;
     if (!Number.isFinite(L.speedF)) L.speedF = 0;
     if (!Number.isFinite(L.bobPhase)) L.bobPhase = 0;
     if (!Number.isFinite(L.animSpeed)) L.animSpeed = 0;
@@ -1258,8 +1260,6 @@ async function boot() {
       // auto-follow behind car
       if (game.clock.elapsed - lastMouseTime > 1.2 && kmh > 8) {
         const want = P.heading + Math.PI;
-    // game.smoothCam (runtime A/B for the jitter probe) overrides the ?smoothcam URL flag
-    const smoothCam = game.smoothCam ?? SMOOTHCAM;
         let d = want - game.cameraYaw;
         d = Math.atan2(Math.sin(d), Math.cos(d));
         game.cameraYaw += d * Math.min(1, dt * 2.5);
