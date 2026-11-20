@@ -21,7 +21,7 @@
     /leaf|leaves|grass|foliage|canopy|frond|bush|shrub|flower|fern|weed|vine|ivy|decal|water|ocean|sea|sky|cloud|shadow|pool|glow|light|beam|particle|smoke|fog|marker|blob|contact|ground_cover|lawn|paint|mark|wire|cable|line|helper|hud|reticle|puddle|crown|palm_top|umbrella|awning|reed|sawgrass|moss|flora|veg|rain|spray|wake|foam|splash|road|asphalt|sidewalk|terrain|sand|ground|seabed|deck|ramp/i;
   // Drawn ground: the meshes whose top surface people and cars stand on.
   const GROUND_NAME = /terrain|ground|road|sidewalk|plaza|sand|beach|seabed|yard|lot|curb|tile/i;
-  const NOT_GROUND = /grass|weed|flower|decal|line|mark|puddle|leaf|shadow|blob/i;
+  const NOT_GROUND = /grass|weed|flower|decal|line|mark|puddle|leaf|shadow|blob|^houses:|fin:/i;
 
   const raycaster = new T.Raycaster();
   const tmpSphere = new T.Sphere();
@@ -210,6 +210,10 @@
       if (SOFT_NAME.test(nm)) {
         return;
       }
+      // bushes are soft on purpose (src/vehicles/physics/shrubs.js: you push through them, slowed down)
+      if (m.userData?.vegCls === 'shrub') {
+        return;
+      }
       if ((m.transparent && m.opacity < 0.9) || m.alphaTest > 0.05 || m.depthWrite === false) {
         return;
       }
@@ -338,6 +342,16 @@
     }
   }
 
+  const viewFrustum = new T.Frustum();
+  const viewMat = new T.Matrix4();
+  function inView(p) {
+    const cam = g.camera;
+    cam.updateMatrixWorld();
+    viewMat.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+    viewFrustum.setFromProjectionMatrix(viewMat);
+    return viewFrustum.containsPoint(p);
+  }
+
   function bodyKind(c) {
     const b = c.parent();
     if (!b) {
@@ -427,6 +441,9 @@
           speed: speedOf(c),
           // false: the tile at the hit has no near (full-detail) build yet, so only mid / far LOD is drawn there
           tileNear: nearTiles(Math.floor(p.x / 200), Math.floor(p.z / 200)),
+          // outside the camera view: systems that cull by view (countryside cells past 100 m) draw nothing there
+          // on purpose, so a collider there is not a wall the player can run into unseen ahead
+          inView: inView(p),
           handle: c.handle,
         });
       }
@@ -592,6 +609,7 @@
       noCollider: 0,
       insideSolid: 0,
       lodOnly: 0,
+      onProp: 0,
       lodDrawnMinusCol: [],
       worst: [],
       noDrawn: 0,
@@ -629,6 +647,12 @@
         }
         if (!col || col.n < 0.5) {
           out.noCollider++;
+          continue;
+        }
+        // a rock, a sapling or a prop standing on the ground is not the ground (its own mesh is not a ground mesh)
+        const st = col.c.shapeType();
+        if (st !== 6 && st !== 7) {
+          out.onProp++;
           continue;
         }
         const d = drawn - col.y;

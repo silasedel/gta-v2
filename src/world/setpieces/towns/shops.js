@@ -481,13 +481,24 @@ export function buildShop(hk, s, lod = 0) {
       box(PLAST, 0.5, 0.25, 0.01, doorU + doorW * 0.2, 1.55, dz + 0.03, { color: 0xf2f0ea });
     }
     lamps.push({ pos: [doorU, 2.6, z1 + 0.8], color: 0xffd7a0, intensity: 16, range: 6 });
+    // physics-audit: the body is solid up to the shop windows (and bay windows) on both sides of the door, and
+    // only the entry is set back to the door. (It was one box set back by the entry depth over the whole width:
+    // the front 0.9 m of every window, 1.35 m with a bay, could be walked and driven into.)
     cols.length = 0;
-    cols.push({
-      shape: 'box',
-      p: [0, h / 2, -recess / 2 + 0.02],
-      h: [w / 2, h / 2, d / 2 - recess / 2],
-      ry: 0,
-    });
+    const doorA = doorU - doorW / 2 - 0.12,
+      doorB = doorU + doorW / 2 + 0.12;
+    const bodyBox = (a, b, zMax) => {
+      if (b - a < 0.05) return;
+      cols.push({
+        shape: 'box',
+        p: [(a + b) / 2, h / 2, (zMax - d / 2) / 2],
+        h: [(b - a) / 2, h / 2, (zMax + d / 2) / 2],
+        ry: 0,
+      });
+    };
+    bodyBox(-w / 2, doorA, zf + bay);
+    bodyBox(doorA, doorB, dz);
+    bodyBox(doorB, w / 2, zf + bay);
     // shack fronts (bait / marina / seafood): board and batten skin over the stucco and a tin awning
     // shack fronts get their board and batten from the facade skin above the windows (never over the glass)
     // cafe tables, sidewalk sale racks and plants are placed by the town (they sit on the sidewalk)

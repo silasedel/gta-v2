@@ -278,6 +278,8 @@ report.totals = {
   roadKm: +(roadM / 1000).toFixed(2),
   roadPhantomsPerKm: +(roadPhC.length / Math.max(0.001, roadM / 1000)).toFixed(2),
   phantomClusters: phC.length,
+  phantomClustersInView: phC.filter((f) => f.inView !== false).length,
+  staticPhantomClusters: phC.filter((f) => f.body !== 'dynamic').length,
   missingClusters: miC.length,
   phantomByOwner: groupBy(
     phC,
@@ -288,6 +290,7 @@ report.totals = {
       ' ' +
       f.shape +
       (f.tileNear === false ? ', before near build' : '') +
+      (f.inView === false ? ', out of view' : '') +
       ']',
   ),
   missingByMesh: groupBy(miC, (f) => f.mesh),
