@@ -1085,6 +1085,13 @@ export async function createMaterials(renderer) {
       loadSet(renderer, 'weathered_planks'),
       loadSet(renderer, 'brushed_concrete'),
     ]);
+    // (ground nov19b, user: "this just looks really bad with the concrete") lots and aprons: the brushed-concrete scan carries
+    // big trowel swirls in its normal and albedo, which read as a repeating fingerprint over a whole lot and sparkle at
+    // grazing angles. The calm hangar-floor scan (already loaded for the airport aprons by terrain.js: the same cached
+    // textures, no extra memory) is plain poured concrete; the 4.5 m joints and stains still come from groundWear.
+    // ?lotconc=old = the brushed scan.
+    const LOT_OLD = typeof location !== 'undefined' && /[?&]lotconc=old\b/.test(location.search);
+    const sLot = LOT_OLD ? sConc : await loadSet(renderer, 'hangar_concrete_floor');
     const rooms = await bakeRoomAtlas(renderer);
     M.facade = createFacadeMaterial(wallArr, rooms, facU);
     M.facade.userData.pbr = 'facade-array';
@@ -1114,7 +1121,12 @@ export async function createMaterials(renderer) {
       mat.needsUpdate = true;
     };
     full(M.sidewalk, sSide, 1.75);
-    full(M.parking, sConc, 1.45, 0.6);
+    // same mean brightness as before: the hangar scan's albedo is ~4.2x darker than the brushed one
+    if (LOT_OLD) full(M.parking, sConc, 1.45, 0.6);
+    else {
+      full(M.parking, sLot, 6.1, 0.6);
+      M.parking.normalScale.set(0.6, 0.6);
+    }
     full(M.panels, sSide, 1.9, 2.4);
     full(M.promenade, sSide, 1, 3.2);
     M.promenade.color.setRGB(2.1, 1.5, 1.36);
@@ -1322,6 +1334,9 @@ export async function createMaterials(renderer) {
           vec2 jw = max( fwidth( jp ), vec2( 1e-4 ) );
           float jl = 1.0 - smoothstep( 0.5 - ${joint[3].toFixed(3)} / ${joint[0].toFixed(3)} - jw.x, 0.5 - jw.x * 0.5, max( jf.x, jf.y * ${(joint[0] / joint[1]).toFixed(3)} ) );
           jl = ( 1.0 - jl ) * clamp( 0.35 / max( jw.x, jw.y ) - 0.4, 0.0, 1.0 );
+          // (ground nov19b) once a pixel is wider than the joint, the band is drawn about half a pixel wide: scale its contrast
+          // by the share of the pixel the real joint covers (a grid of full-strength 1 px lines read as moire on every lot)
+          jl *= ${(joint[3] / joint[0]).toFixed(4)} / ( ${(joint[3] / joint[0]).toFixed(4)} + 0.5 * max( jw.x, jw.y ) );
           float ju = psWH( floor( jp ) + 3.7 );
           diffuseColor.rgb *= ( 1.0 - ${joint[4].toFixed(3)} * jl ) * ( 0.96 + 0.08 * ju );
           roughnessFactor = mix( roughnessFactor, 0.95, jl );

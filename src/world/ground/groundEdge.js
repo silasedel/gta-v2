@@ -104,7 +104,11 @@ void main() {`,
             // small chunks (5-15 cm) and grit, densest at the edge; the sand around them is darkened by asphalt dust
             float c1 = gN(wp * 13.0 + 1.7), c2 = gN(wp * 37.0 - 3.1), c3 = gN(wp * 1.7 + 8.8);
             float edgeK = smoothstep(0.2, 0.48, gmA);
-            gmCrumb = cz * max(step(0.86 - edgeK * 0.1 - c3 * 0.08, c1 * 0.6 + c2 * 0.4) * 0.85, step(0.9 - edgeK * 0.06, c2) * 0.6);
+            // (ground nov19b) soft thresholds and a footprint fade: the 2.7 cm grit octave aliased into speckle past a few meters
+            float cFw = max((fwidth(wp.x) + fwidth(wp.y)) * 0.5, 1e-4);
+            float cT1 = 0.86 - edgeK * 0.1 - c3 * 0.08, cT2 = 0.9 - edgeK * 0.06;
+            gmCrumb = cz * max(smoothstep(cT1 - 0.02, cT1 + 0.02, c1 * 0.6 + c2 * 0.4) * 0.85, smoothstep(cT2 - 0.02, cT2 + 0.02, c2) * 0.6);
+            gmCrumb *= 1.0 - smoothstep(0.012, 0.026, cFw);
             gs.alb *= 1.0 - cz * edgeK * 0.18 * (0.6 + 0.4 * c3);
             gs.alb = mix(gs.alb, vec3(0.16, 0.155, 0.148) * (0.8 + 0.4 * c2), gmCrumb); gs.rough = mix(gs.rough, 0.85, gmCrumb); gs.h = mix(gs.h, 0.75, gmCrumb);
           }
@@ -161,13 +165,16 @@ float reN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
           '#include <normal_fragment_begin>',
           /* glsl */ `{
         vec2 w = vGmW.xz; float fine = gmFine(w);
+        // (ground nov19b) pixel footprint (m): noise octaves fade to their mean before they alias (the ragged-edge discard and the
+        // grit below sparkled along every open road edge while the camera moved)
+        float reFw = max((fwidth(w.x) + fwidth(w.y)) * 0.5, 1e-4);
         { // Keys asphalt (mock-up): pale, sun-bleached, a thin film of coral sand in patches; shallow puddles linger in the low spots
           float kk = smoothstep(4150.0, 4500.0, w.y);
           if (kk > 0.0 && vGmW.y < 1.2) {
             float b1 = reN(w * 0.21 + 1.3), b2 = reN(w * 1.7 - 4.1), b3 = reN(w * 6.3 + 2.2);
             float l = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
             vec3 bleached = mix(diffuseColor.rgb, vec3(l) * vec3(1.06, 1.03, 0.96), 0.5) * 1.22;
-            float g4 = reN(w * 23.0 + 9.9); float film = smoothstep(0.5, 0.8, b1 * 0.55 + b2 * 0.45) * smoothstep(0.2, 0.7, b3 * 0.5 + g4 * 0.5); // drifted sand: patchy at 3 scales and grainy, not a soft cloud
+            float g4 = mix(reN(w * 23.0 + 9.9), 0.5, smoothstep(0.2, 0.4, reFw * 23.0)); float film = smoothstep(0.5, 0.8, b1 * 0.55 + b2 * 0.45) * smoothstep(0.2, 0.7, b3 * 0.5 + g4 * 0.5); // drifted sand: patchy at 3 scales and grainy, not a soft cloud
             diffuseColor.rgb = mix(diffuseColor.rgb, bleached, kk * 0.85);
             diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.5, 0.47, 0.41) * (0.85 + 0.3 * b3), film * 0.4 * kk);
             roughnessFactor = mix(roughnessFactor, 0.97, film * 0.5 * kk);
@@ -180,8 +187,9 @@ float reN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
           vec4 gn = gmNear(w);
           float open = (1.0 - smoothstep(0.06, 0.18, gn.g)) * fine;
           if (open > 0.01 && gn.r < 0.82) {
-            float n1 = reN(w * 1.6 + 3.1), n2 = reN(w * 5.3 - 1.7), n3 = reN(w * 17.0 + 0.3);
-            float g1 = reN(w * 41.0 + 5.5);
+            float n1 = reN(w * 1.6 + 3.1), n2 = reN(w * 5.3 - 1.7);
+            float n3 = mix(reN(w * 17.0 + 0.3), 0.5, smoothstep(0.2, 0.4, reFw * 17.0));
+            float g1 = mix(reN(w * 41.0 + 5.5), 0.5, smoothstep(0.2, 0.4, reFw * 41.0));
             float cut = 0.5 + (n1 * 0.45 + n2 * 0.3 + n3 * 0.25) * 0.15 * open + (g1 - 0.5) * 0.035 * open + 0.01; // ragged at 3 scales, grit at the very edge
             if (gn.r < cut) discard;
             float keys = smoothstep(4150.0, 4500.0, w.y);
@@ -247,7 +255,10 @@ float feN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f)
           diffuseColor.rgb = mix(diffuseColor.rgb, soil, wd * 0.85);
           roughnessFactor = mix(roughnessFactor, 0.95, wd);
           float cz = smoothstep(0.16, 0.36, gn.r) * (1.0 - smoothstep(0.5, 0.62, gn.r)) * gmFine(w) * (1.0 - smoothstep(0.06, 0.18, gn.g));
-          float crumb = cz * step(0.8, feN(w * 7.3 + 1.7) * 0.55 + feN(w * 19.0 - 3.1) * 0.45);
+          // (ground nov19b) 5 cm crumbs: soft-edged, and gone once a pixel covers ~2 cm (a hard step aliased into speckle)
+          float feFw = max((fwidth(w.x) + fwidth(w.y)) * 0.5, 1e-4);
+          float crumbN = feN(w * 7.3 + 1.7) * 0.55 + feN(w * 19.0 - 3.1) * 0.45;
+          float crumb = cz * smoothstep(0.78, 0.83, crumbN) * (1.0 - smoothstep(0.01, 0.022, feFw));
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.1, 0.098, 0.095), crumb);
         }
       }

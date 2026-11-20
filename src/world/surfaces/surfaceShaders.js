@@ -63,7 +63,9 @@ vec4 srfTexB(sampler2D t, vec2 uv, float bias) {
 // (r3-world) tar crack-seal band: the binder squeezed out unevenly (ragged rim, a few cm of jitter at close range), the line fades
 // out by pixel footprint like before (no shimmer far away)
 float srfTarBand(float d, float tw, vec2 w, float fwM) {
-  float rag = ((srfN(w * 23.0) - 0.5) * 0.5 + (srfN(w * 61.0 + 3.3) - 0.5) * 0.35) * clamp(0.012 / fwM, 0.0, 1.0);
+  // (ground nov19b) octaves fade by pixel footprint (the 1.6 cm one sparkled along the band edge at mid range)
+  float rag = (srfN(w * 23.0) - 0.5) * 0.5 * (1.0 - smoothstep(0.2, 0.4, fwM * 23.0))
+    + (srfN(w * 61.0 + 3.3) - 0.5) * 0.35 * (1.0 - smoothstep(0.2, 0.4, fwM * 61.0));
   float t = tw * (1.0 + rag);
   return (1.0 - smoothstep(t, t + fwM, d)) * clamp(tw * 2.5 / fwM, 0.0, 1.0);
 }
@@ -263,8 +265,8 @@ ${
   // (r3-world) tar sealant body: near-black binder with sand / fine-aggregate grit pressed into it (pale flecks, darker pools),
   // a slight sheen where it is thick and smooth, rougher where the grit shows; the grit fades out by pixel footprint
   float tGF = 1.0 - smoothstep(0.004, 0.012, fwM);
-  float tGrit = srfN(w * 38.0) * 0.6 + srfN(w * 91.0 + 1.3) * 0.4;
-  float tFleck = step(0.86, srfH(floor(w * 160.0))) * tGF;
+  float tGrit = mix(srfN(w * 38.0) * 0.6 + srfN(w * 91.0 + 1.3) * 0.4, 0.5, smoothstep(0.2, 0.4, fwM * 91.0));
+  float tFleck = step(0.86, srfH(floor(w * 160.0))) * (1.0 - smoothstep(0.0015, 0.003, fwM)); // 6 mm cells: only while a cell spans 2+ px
   vec3 tarCol = vec3(0.030, 0.029, 0.027) * (0.8 + 0.55 * (tGrit - 0.5) * tGF) + vec3(0.075, 0.07, 0.062) * tFleck;
   diffuseColor.rgb = mix(diffuseColor.rgb, tarCol, tar * 0.88);
   diffuseColor.rgb *= 1.0 - 0.6 * crk;
@@ -288,8 +290,12 @@ if (uSrf.x > 0.5) {
   #endif
   float age = 0.45 + (srfN(w * 0.02 + 2.0) - 0.5) * 0.7;
   float wear = clamp(age * 0.45 + wheel * 0.75, 0.0, 1.0);
-  float wn = srfN(w * 7.0) * 0.55 + srfN(w * 23.0 + 3.0) * 0.3 + srfN(w * 61.0) * 0.15;
-  float near = 1.0 - smoothstep(0.004, 0.012, fwM);
+  // (ground nov19b) each octave goes to its mean before it gets near one cycle per two pixels: the discard below is a hard
+  // per-pixel cut, and the 1.6 cm octave aliased into a crawling speckle along every stripe edge at 5-12 m
+  float wn = srfN(w * 7.0) * 0.55
+    + mix(srfN(w * 23.0 + 3.0), 0.5, smoothstep(0.2, 0.4, fwM * 23.0)) * 0.3
+    + mix(srfN(w * 61.0), 0.5, smoothstep(0.2, 0.4, fwM * 61.0)) * 0.15;
+  float near = 1.0 - smoothstep(0.003, 0.008, fwM);
   if (wn < wear * 0.62 * near) discard;                                     // chipped: the asphalt shows
   float gone = smoothstep(0.0, 0.25, wear * 0.62 - wn + 0.12);
   vec3 asph = vec3(0.08, 0.08, 0.082);
@@ -315,7 +321,8 @@ if (uSrf.x > 0.5) {
   #endif
   if (wN.y > 0.7 && tactile) {
     // detectable warning pad: truncated domes on a 6 cm grid, molded plastic
-    float fD = 1.0 - smoothstep(0.004, 0.012, fwM);
+    // (ground nov19b) 2.3 cm domes on a 6 cm grid: gone before a pixel reaches ~1/4 of the grid (they turned into moire at 4-12 mm/px)
+    float fD = 1.0 - smoothstep(0.0025, 0.006, fwM);
     vec2 g = wl / 0.06, f = fract(g) - 0.5; float r = length(f) * 0.06, R = 0.0115;
     float dome = 1.0 - smoothstep(R * 0.8, R, r);
     srfTilt += (r > 1e-5 ? f / length(f) : vec2(0.0)) * smoothstep(R * 0.45, R, r) * dome * 1.2 * fD;
@@ -460,9 +467,23 @@ export function patchSurface(mat, kind, { lane = false, conc = null, slab = fals
         '#include <roughnessmap_fragment>',
         '#include <roughnessmap_fragment>' + WALK_MAIN,
       );
+      // (ground nov19b, user: "grainy") the sidewalk / paver scans are 2048 px per 2.4-3 m (~1.5 mm a texel) with a salt-and-pepper
+      // aggregate: sampled at the stock mip it crawled under the TAA jitter at 3-15 m. Half a mip softer costs nothing visible
+      // at the feet (a pixel there is already ~1 mm) and calms the speckle; the normal map gets the same bias (no sun sparkle).
+      const walkMap = resolved(
+        'map_fragment',
+        'texture2D( map, vMapUv )',
+        'texture2D( map, vMapUv, 0.6 )',
+      );
+      if (walkMap) fs = fs.replace('#include <map_fragment>', walkMap);
+      const walkNrm = resolved(
+        'normal_fragment_maps',
+        'texture2D( normalMap, vNormalMapUv )',
+        'texture2D( normalMap, vNormalMapUv, 0.6 )',
+      );
       fs = fs.replace(
         '#include <normal_fragment_maps>',
-        '#include <normal_fragment_maps>' + TILT_APPLY,
+        (walkNrm || '#include <normal_fragment_maps>') + TILT_APPLY,
       );
     }
     sh.fragmentShader = fs;
