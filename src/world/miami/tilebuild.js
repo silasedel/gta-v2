@@ -11730,7 +11730,11 @@ export function createTileBuilder(ctx) {
           let j = i;
           while (j + 1 < posts.length && posts[j + 1].ok) j++;
           if (j > i) {
-            const fr = polyFrame([at(posts[i].s2, -0.25), at(posts[j].s2, -0.25)]);
+            // (ground nov19b, user: "glitched railing") the rails follow every post of the run: a chord from the first to the
+            // last post cut through the posts on a curved seawall and left them standing off the rail
+            const railPts = [];
+            for (let k = i; k <= j; k++) railPts.push([posts[k].x, posts[k].z]);
+            const fr = polyFrame(railPts);
             for (const [y0, h] of [
               [1.0, 0.06],
               [0.52, 0.04],
@@ -14465,6 +14469,9 @@ export function createTileBuilder(ctx) {
         );
       const n = stairBoxes(e).length,
         len = STEP_D * n;
+      // (ground nov19b, user: "glitched railing") a quay only ~12 cm over the sea has every tread under water: its two
+      // handrails were all that showed, as black rods slanting into the bay. Handrails only on flights with steps above water.
+      if (e.top < 0.6) continue;
       for (const side of [-1, 1]) {
         const ox = e.tx * side * (e.w / 2 - 0.05),
           oz = e.tz * side * (e.w / 2 - 0.05);
