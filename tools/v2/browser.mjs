@@ -19,7 +19,8 @@ import os from 'node:os';
 
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const LOCK_DIR = path.join(os.tmpdir(), 'port-solana-v2-browser');
-const SLOTS = 3; // overnight (user asleep): 5, restore 3 for the morning;   // 4 pushed the load to 230 (shader compiles + the user playing on 5202); 3 is the safe ceiling
+// user (Nov 19): testing made the Mac unusable (load 50-100). One test browser at a time, always.
+const SLOTS = 1;
 const STALE_MS = 50 * 60 * 1000; // a live owner keeps its slot (12 min let long runs lose it, so 4+ Chromes ran at once)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -68,6 +69,23 @@ async function acquireSlot(waitSeconds = 1500) {
   }
 }
 
+// Kill test browsers whose node script died without cleaning up (a killed script leaves Chrome running under
+// launchd, and those kept burning CPU for hours).
+function reapOrphanBrowsers() {
+  const rows = execSyncSafe('ps -axo pid=,ppid=,command=').split('\n');
+  for (const row of rows) {
+    const m = row.trim().match(/^(\d+)\s+(\d+)\s+(.*)$/);
+    if (!m) continue;
+    const [, pid, ppid, cmd] = m;
+    if (ppid !== '1' || !cmd.includes('--headless=new') || !cmd.includes('ps-v2-chrome-')) continue;
+    try {
+      process.kill(Number(pid), 'SIGKILL');
+    } catch (e) {
+      /* */
+    }
+  }
+}
+
 function execSyncSafe(cmd) {
   try {
     return String(_cp.execSync(cmd, { stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 32e6 }));
@@ -81,13 +99,14 @@ export async function withBrowser(opts, fn) {
     opts = {};
   }
   const { width = 1280, height = 720, maxSeconds = 240, extraArgs = [] } = opts || {};
+  reapOrphanBrowsers();
   const slot = await acquireSlot();
   const prof = fs.mkdtempSync(path.join(os.tmpdir(), 'ps-v2-chrome-'));
   const chrome = spawn(
     'nice',
     [
       '-n',
-      '10',
+      '15',
       CHROME,
       '--headless=new',
       '--mute-audio',
@@ -165,6 +184,8 @@ export async function withBrowser(opts, fn) {
   };
   process.on('SIGINT', onSig);
   process.on('SIGTERM', onSig);
+  process.on('SIGHUP', onSig);
+  process.on('SIGALRM', onSig); // perl alarm time limits
   process.on('exit', cleanup);
   const dog = setTimeout(() => {
     console.error(`[v2 browser] watchdog: exceeded ${maxSeconds}s, killing Chrome`);
