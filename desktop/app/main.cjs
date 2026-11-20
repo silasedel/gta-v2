@@ -52,7 +52,9 @@ sw.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 // --ps-js-flags="..." adds V8 flags for measurement runs (A/B of GC settings with the in-game benchmark).
 sw.appendSwitch(
   'js-flags',
-  ['--max-old-space-size=8192', '--max-semi-space-size=64', argValue('ps-js-flags') || ''].join(' ').trim(),
+  ['--max-old-space-size=8192', '--max-semi-space-size=64', argValue('ps-js-flags') || '']
+    .join(' ')
+    .trim(),
 );
 if (process.platform === 'darwin') {
   // ANGLE on Metal: Chromium's fastest WebGL path on Apple silicon.
@@ -65,7 +67,11 @@ app.setName('Southline');
 const benchLabel = argValue('ps-bench'); // built-in benchmark (src/perf/bench.v2.js): --ps-bench=<label> [--ps-bench-out=<file.json>] [--ps-bench-stay]
 const testProfile = !!argValue('ps-size') || hasArg('ps-test-profile') || !!benchLabel;
 if (testProfile) {
-  app.setPath('userData', path.join(app.getPath('appData'), 'Port Solana Test'));
+  // --ps-profile=<name>: a separate test profile (own single-instance lock and logs), so two measurement runs (A/B
+  // builds) can run side by side
+  const prof = argValue('ps-profile');
+  const dir = prof ? 'Port Solana Test ' + String(prof).replace(/[^\w-]/g, '') : 'Port Solana Test';
+  app.setPath('userData', path.join(app.getPath('appData'), dir));
 } else {
   // renamed to Southline: keep the saves, settings and window state where earlier builds put them
   app.setPath('userData', path.join(app.getPath('appData'), 'Port Solana'));

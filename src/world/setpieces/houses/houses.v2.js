@@ -1033,6 +1033,13 @@ export async function initV2(game) {
         tilePending.push(t);
       if (clusters.has(k) && (!t.near || d > MAP_R + 120)) removeCluster(clusters.get(k));
     }
+    // memory leak (Nov 19): the loop above only sees tiles the streamer still holds. Once the streamer dropped a far
+    // tile, its cluster (meshes, plant fields, lots, colliders) was never removed: houses piled up as the player drove.
+    for (let i = clList.length - 1; i >= 0; i--) {
+      const cl = clList[i];
+      if (!cl.tile || cl.always || S.tiles.get(cl.tile.k) === cl.tile) continue;
+      removeCluster(cl);
+    }
     if (TS && tilePending.length) {
       tilePending.sort(
         (a, b) => Math.hypot(a.cx - px, a.cz - pz) - Math.hypot(b.cx - px, b.cz - pz),

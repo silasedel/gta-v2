@@ -31,6 +31,27 @@ const STOPS = [
   ['edgewater', 308, -1452],
   ['havana', -660, -55],
 ];
+// --stops wide: a long loop over the whole map (finds what accumulates as new areas stream in)
+const WIDE = [
+  ['downtown', 407, -110],
+  ['edgewater', 308, -1452],
+  ['gardens', 715, -3080],
+  ['beach', 2332, -660],
+  ['southbeach', 2398, 660],
+  ['port', 1595, 792],
+  ['brickell', 0, 1760],
+  ['airport', -1210, 1045],
+  ['havana', -660, -55],
+  ['homestead', -1320, 3190],
+  ['floridacity', -330, 3520],
+  ['keylargo', -1155, 5500],
+  ['naples', -4730, -220],
+  ['clewiston', -1540, -2805],
+];
+if (o.stops === 'wide') {
+  STOPS.length = 0;
+  STOPS.push(...WIDE);
+}
 const T_START = Date.now();
 const BASE = o.url || 'http://127.0.0.1:5200';
 
@@ -95,6 +116,8 @@ const CENSUS = `(() => {
   const seenGeo = new Set();
   const seenTex = new Set();
   const groups = {};
+  const texKeys = {};
+  const geoKeys = {};
   let cpuTotal = 0, gpuTotal = 0, geoCount = 0, dropped = 0, texBytes = 0;
   function attrBytes(a, rec) {
     if (!a) return;
@@ -112,6 +135,10 @@ const CENSUS = `(() => {
       const t = m[k];
       if (t && t.isTexture && !seenTex.has(t)) {
         seenTex.add(t);
+        const im = t.image;
+        const src = (im && im.src ? String(im.src).split('/').pop().split('?')[0] : '') || '';
+        const tk = (t.name || src || t.constructor.name) + ' ' + ((im && im.width) || 0) + 'x' + ((im && im.height) || 0);
+        texKeys[tk] = (texKeys[tk] || 0) + 1;
         const img = t.image;
         let w = 0, h = 0, d = 1;
         if (img) { w = img.width || 0; h = img.height || 0; d = img.depth || 1; }
@@ -133,6 +160,9 @@ const CENSUS = `(() => {
       if (!g || seenGeo.has(g)) return;
       seenGeo.add(g);
       rec.geos++;
+      const par = x.parent && x.parent !== ch ? x.parent.name || x.parent.type : '';
+      const gk = name + ' > ' + (par || '-') + ' > ' + (x.name || x.type);
+      geoKeys[gk] = (geoKeys[gk] || 0) + 1;
       geoCount++;
       for (const k in g.attributes) attrBytes(g.attributes[k], rec);
       attrBytes(g.index, rec);
@@ -155,7 +185,7 @@ const CENSUS = `(() => {
     geoCpuMB: Math.round(cpuTotal / 1048576),
     geoGpuMB: Math.round(gpuTotal / 1048576),
     texMB: Math.round(texBytes / 1048576),
-    geoCount, dropped, top,
+    geoCount, dropped, top, texKeys, geoKeys,
     ri: { geo: ri.memory.geometries, tex: ri.memory.textures, calls: ri.render.calls, tris: ri.render.triangles },
     tiles: st ? { n: st.tiles.size, near: st.stats.near, mid: st.stats.mid, far: st.stats.far, col: st.stats.col, queued: st.stats.queued } : null,
     maxStep: st ? st.stats.maxStep : null,
@@ -171,6 +201,14 @@ await withBrowser({ width: 1280, height: 720, maxSeconds: 900 }, async (b) => {
   await b.goto(BASE + '/?mute' + (o.q || ''));
   await b.waitFor(GAME_READY + " && typeof game.teleport === 'function'", 600);
   await startGame(b);
+  // --track: remember every geometry / texture made from now on with its creating call site (r3-leak.track.js); the
+  // census at the end lists the ones three.js still holds on the GPU that nothing in the scene uses (never disposed)
+  if (o.track) {
+    console.log(
+      'tracker',
+      await b.eval(fs.readFileSync(new URL('./r3-leak.track.js', import.meta.url), 'utf8')),
+    );
+  }
   const sample = async (label) => {
     try {
       await b.send('HeapProfiler.collectGarbage');
@@ -226,6 +264,28 @@ await withBrowser({ width: 1280, height: 720, maxSeconds: 900 }, async (b) => {
       share: +(gc / Math.max(1, all - idle)).toFixed(3),
     };
     console.log('gc (10 s downtown, teleport arrival)', JSON.stringify(rep.gc));
+  }
+  // what grew between the first and the last sample
+  const S0 = rep.samples[0];
+  const S1 = rep.samples[rep.samples.length - 1];
+  const delta = (a, b) =>
+    Object.keys(b)
+      .map((k) => [k, (b[k] || 0) - (a[k] || 0), b[k]])
+      .filter((x) => x[1] !== 0)
+      .sort((x, y) => y[1] - x[1])
+      .slice(0, 25);
+  if (S0 && S1) {
+    rep.texGrowth = delta(S0.texKeys, S1.texKeys);
+    rep.geoGrowth = delta(S0.geoKeys, S1.geoKeys);
+    console.log('texture growth', JSON.stringify(rep.texGrowth));
+    console.log('geometry growth', JSON.stringify(rep.geoGrowth));
+  }
+  if (o.track) {
+    await b.send('HeapProfiler.collectGarbage');
+    const c = JSON.parse(await b.eval('JSON.stringify(window.__trk.census())', 120000));
+    rep.orphans = c;
+    console.log('orphans', c.orphan, 'of', c.gpu, 'on the GPU');
+    for (const [k, n] of c.top.slice(0, 30)) console.log(String(n).padStart(6), k);
   }
   rep.errors = [...new Set(b.errors)].slice(0, 20);
 });

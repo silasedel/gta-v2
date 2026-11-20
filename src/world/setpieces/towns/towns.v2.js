@@ -204,13 +204,14 @@ export async function initV2(game) {
 
   function* build(T) {
     const t0 = performance.now();
-    const plan = planTown(T, { D, isWater, roadDist, groundAt, buildingsNear, lots });
+    // a town unloaded far away keeps its plan: rebuilt from the same plan, its lots already reserved
+    const plan = T.plan || planTown(T, { D, isWater, roadDist, groundAt, buildingsNear, lots });
     T.planned = true;
     if (!plan) {
       T.state = 'none';
       return;
     }
-    for (const q of plan.reserved) lots.reserve(q);
+    if (!T.plan) for (const q of plan.reserved) lots.reserve(q);
     T.plan = plan;
     yield;
     const atlas = signAtlas(
@@ -240,6 +241,7 @@ export async function initV2(game) {
       e2 = [],
       cols = [];
     T.lampList = [];
+    T.atlas = atlas;
     plan.shops.forEach((s, i) => {
       s.sign = atlas.cells[i];
       s.signMat = atlas.material;
@@ -350,6 +352,51 @@ export async function initV2(game) {
   }
   let job = null;
   const lampIds = new Map();
+  // memory leak (Nov 19): a built town stayed in memory for good (merged meshes, sign atlas canvas, plant fields).
+  // Past the far-LOD range it is freed now and rebuilt from its saved plan when the camera comes back.
+  const UNLOAD_D = 4800;
+  function unloadTown(T) {
+    for (const g of [T.near, T.far]) {
+      if (!g) continue;
+      g.traverse((o) => {
+        if (o.isMesh) o.geometry?.dispose();
+      });
+      g.removeFromParent();
+    }
+    T.near = null;
+    T.far = null;
+    for (const f of T.fields || []) {
+      try {
+        f.remove();
+      } catch (e) {
+        /* already gone */
+      }
+    }
+    T.fields = [];
+    const am = T.atlas?.material;
+    if (am) {
+      am.map?.dispose();
+      am.emissiveMap?.dispose();
+      am.dispose();
+    }
+    T.atlas = null;
+    if (T.body) {
+      try {
+        game.world.removeRigidBody(T.body);
+      } catch (e) {
+        /* */
+      }
+      T.body = null;
+    }
+    const L = game.env?.lamps;
+    for (const l of T.lampList || []) {
+      const id = lampIds.get(l);
+      if (id === undefined) continue;
+      L?.removeGroup?.(id);
+      lampIds.delete(l);
+    }
+    T.state = 'idle';
+  }
   game.updaters.push(function townsTick() {
     try {
       const cam = game.camera.position,
@@ -357,11 +404,17 @@ export async function initV2(game) {
         night = (hk.uNight?.value ?? 0) > 0.5;
       for (const T of list) {
         const d = Math.hypot(cam.x - T.x, cam.z - T.z);
-        if (T.state === 'idle' && d < START && !job && tilesReady(T)) {
+        // an unloaded town (it has a plan) comes back before its far LOD would show again (4 km)
+        const startD = T.plan ? UNLOAD_D - 400 : START;
+        if (T.state === 'idle' && d < startD && !job && tilesReady(T)) {
           T.state = 'building';
           job = build(T);
         }
         if (T.state !== 'built') continue;
+        if (d > UNLOAD_D + T.R) {
+          unloadTown(T);
+          continue;
+        }
         const near = d < T.R + NEAR;
         T.near.visible = near;
         T.far.visible = !near && d < 4000;
