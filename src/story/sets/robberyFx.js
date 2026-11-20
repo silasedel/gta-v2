@@ -122,6 +122,22 @@ function findBone(root, re) {
   return hit;
 }
 
+// anything small in Mari's right hand (a coffee cup): `at` = offset in meters in the hand bone's frame
+export function holdInHand(game, obj, at = [0, -0.08, 0.04], rot = [0, 0, 0]) {
+  const root = game.playerCharacter?.root;
+  const hand = findBone(root, /RightHand$/i) || findBone(root, /hand_?r$/i);
+  if (!hand) return () => {};
+  hand.updateWorldMatrix(true, false);
+  const s = new THREE.Vector3();
+  hand.matrixWorld.decompose(new THREE.Vector3(), new THREE.Quaternion(), s);
+  const k = 1 / Math.max(1e-3, s.x);
+  obj.scale.setScalar(k);
+  obj.position.set(at[0] * k, at[1] * k, at[2] * k);
+  obj.rotation.set(rot[0], rot[1], rot[2]);
+  hand.add(obj);
+  return () => hand.remove(obj);
+}
+
 export function carryBag(game, bag) {
   const root = game.playerCharacter?.root;
   const hand = findBone(root, /RightHand$/i) || findBone(root, /hand_?r$/i);
@@ -307,4 +323,40 @@ export function lightsOn(v) {
   } catch (e) {
     /* a car without a light bar */
   }
+}
+
+// Real red / blue light from a patrol car's light bar: two point lights over the roof that strobe out of phase, so the
+// colors sweep over the walls, the wet street and the faces nearby. Returns stop(). (Two per car: the scene's light
+// budget fades extras instead of popping, see CONVENTIONS "Lights".)
+export function policeGlow(game, v) {
+  const red = new THREE.PointLight('#ff2a2a', 0, 16, 2);
+  const blue = new THREE.PointLight('#2a5aff', 0, 16, 2);
+  red.name = 'intro2:copRed';
+  blue.name = 'intro2:copBlue';
+  game.scene.add(red, blue);
+  let t = Math.random();
+  const side = new THREE.Vector3();
+  const tick = (dt) => {
+    t += dt;
+    const p = v.body?.translation?.() || v.mesh?.position;
+    if (!p) return;
+    const r = v.body?.rotation?.();
+    const h = r ? 2 * Math.atan2(r.y, r.w) : 0;
+    side.set(Math.cos(h) * 0.45, 0, -Math.sin(h) * 0.45);
+    red.position.set(p.x - side.x, p.y + 1.75, p.z - side.z);
+    blue.position.set(p.x + side.x, p.y + 1.75, p.z + side.z);
+    // double flash, then the other color: 0.7 s per cycle
+    const ph = (t / 0.7) % 1;
+    const flash = (a) => (a < 0.12 || (a > 0.2 && a < 0.32) ? 1 : 0);
+    red.intensity = 38 * flash(ph);
+    blue.intensity = 42 * flash((ph + 0.5) % 1);
+  };
+  game.updaters.push(tick);
+  return () => {
+    const i = game.updaters.indexOf(tick);
+    if (i >= 0) game.updaters.splice(i, 1);
+    game.scene.remove(red, blue);
+    red.dispose();
+    blue.dispose();
+  };
 }

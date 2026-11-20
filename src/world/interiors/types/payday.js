@@ -422,6 +422,10 @@ registerStoreType({
       waiting: { x: S.x0 + 0.6, z: (lz + S.z1) / 2 },
       door: { x: P.doorX, z: S.z1 - 0.6 },
       outside: { x: P.doorX, z: S.z1 + 2.2 },
+      // dressing spots (the missions add library props here: chair, terminal, TV, cooler, bills)
+      station2: { x: tellers[1], z: lz - 0.45 },
+      backCounter: { x: cxm, z: S.z0 + 0.32, y: 0.9 },
+      room: { x0: S.x0, x1: S.x1, z0: S.z0, z1: S.z1, lz, ch },
     };
     ctx.store.counterLocal = { x: tellers[0], z: lz };
   },

@@ -13,6 +13,7 @@
 // buildings are turned 5.7 degrees off the grid). u = meters east along 21st St, v = meters toward the street (south).
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 
 export const SHOP_LOT = 882;
 export const CAFE_LOT = 1028;
@@ -97,6 +98,20 @@ function makeKit(game) {
   const colliders = [];
   const body = game.world.createRigidBody(game.RAPIER.RigidBodyDesc.fixed());
   const kit = {
+    // any geometry, placed at block (u, y, v) and turned like box() (merged with the rest of its material)
+    add(mat, g, u, y, v, o = {}) {
+      const pos = P(u, v);
+      _e.set(o.pitch || 0, FRAME.heading + (o.yaw || 0), o.roll || 0, 'YXZ');
+      _q.setFromEuler(_e);
+      _m.compose(_p.set(pos.x, y, pos.z), _q, _s.set(1, 1, 1));
+      g.applyMatrix4(_m);
+      if (!parts.has(mat)) parts.set(mat, []);
+      parts.get(mat).push(g.index ? g.toNonIndexed() : g);
+    },
+    addWorld(mat, g) {
+      if (!parts.has(mat)) parts.set(mat, []);
+      parts.get(mat).push(g.index ? g.toNonIndexed() : g);
+    },
     // a box centered at block (u, y, v), size (w along u, h, d along v), pitched by `pitch` about the u axis
     box(mat, u, y, v, w, h, d, o = {}) {
       const g = new THREE.BoxGeometry(w, h, d);
@@ -106,7 +121,7 @@ function makeKit(game) {
       _m.compose(_p.set(pos.x, y, pos.z), _q, _s.set(1, 1, 1));
       g.applyMatrix4(_m);
       if (!parts.has(mat)) parts.set(mat, []);
-      parts.get(mat).push(g);
+      parts.get(mat).push(g.toNonIndexed());
       if (o.collide) kit.collider(u, y, v, w, h, d, o);
     },
     collider(u, y, v, w, h, d, o = {}) {
@@ -245,7 +260,128 @@ function materials() {
     emissive: '#ffd890',
     emissiveIntensity: 4,
   });
-  return { steel, rust, grate, plank, wall, inner, door, roof, ac, dark, glass, bulb };
+  // AC cabinet: sun-yellowed enamel, louvered side panels, rust bleeding from the screws, grime at the bottom
+  const acBody = new THREE.MeshStandardMaterial({
+    roughness: 0.55,
+    metalness: 0.25,
+    map: canvasTex(256, 256, (g, w, h) => {
+      g.fillStyle = '#c9c6bb';
+      g.fillRect(0, 0, w, h);
+      for (let y = 18; y < h - 18; y += 7) {
+        g.fillStyle = 'rgba(40, 38, 34, 0.55)';
+        g.fillRect(14, y, w - 28, 3);
+        g.fillStyle = 'rgba(255, 255, 250, 0.35)';
+        g.fillRect(14, y + 3, w - 28, 1);
+      }
+      for (const [x, y] of [
+        [8, 8],
+        [w - 8, 8],
+        [8, h - 8],
+        [w - 8, h - 8],
+      ]) {
+        const gr = g.createLinearGradient(x, y, x, y + 40);
+        gr.addColorStop(0, 'rgba(120, 60, 20, 0.6)');
+        gr.addColorStop(1, 'rgba(120, 60, 20, 0)');
+        g.fillStyle = gr;
+        g.fillRect(x - 2, y, 4, 40);
+      }
+      const gr = g.createLinearGradient(0, h * 0.7, 0, h);
+      gr.addColorStop(0, 'rgba(50, 40, 30, 0)');
+      gr.addColorStop(1, 'rgba(50, 40, 30, 0.5)');
+      g.fillStyle = gr;
+      g.fillRect(0, 0, w, h);
+    }),
+  });
+  // fan guard from above: wire rings and spokes over dark blades
+  const acFan = new THREE.MeshStandardMaterial({
+    roughness: 0.5,
+    metalness: 0.6,
+    map: canvasTex(256, 256, (g, w, h) => {
+      g.fillStyle = '#9a9c9e';
+      g.fillRect(0, 0, w, h);
+      g.fillStyle = '#121314';
+      g.beginPath();
+      g.arc(w / 2, h / 2, w * 0.48, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = '#2c2e31';
+      for (let k = 0; k < 4; k++) {
+        g.save();
+        g.translate(w / 2, h / 2);
+        g.rotate((k * Math.PI) / 2 + 0.3);
+        g.beginPath();
+        g.ellipse(w * 0.2, 0, w * 0.2, w * 0.07, 0.4, 0, Math.PI * 2);
+        g.fill();
+        g.restore();
+      }
+      g.strokeStyle = '#b8babd';
+      g.lineWidth = 2;
+      for (let r = 14; r < w * 0.48; r += 11) {
+        g.beginPath();
+        g.arc(w / 2, h / 2, r, 0, Math.PI * 2);
+        g.stroke();
+      }
+      for (let k = 0; k < 8; k++) {
+        const a = (k * Math.PI) / 4;
+        g.beginPath();
+        g.moveTo(w / 2, h / 2);
+        g.lineTo(w / 2 + Math.cos(a) * w * 0.48, h / 2 + Math.sin(a) * w * 0.48);
+        g.stroke();
+      }
+    }),
+  });
+  const galv = new THREE.MeshStandardMaterial({
+    color: '#8d9193',
+    roughness: 0.45,
+    metalness: 0.8,
+  });
+  const copper = new THREE.MeshStandardMaterial({
+    color: '#b06a3c',
+    roughness: 0.35,
+    metalness: 0.9,
+  });
+  const foam = new THREE.MeshStandardMaterial({ color: '#1b1c1e', roughness: 0.9 });
+  const puddle = new THREE.MeshStandardMaterial({
+    color: '#1a1c20',
+    roughness: 0.04,
+    metalness: 0.2,
+    transparent: true,
+    opacity: 0.75,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -4,
+    depthWrite: false,
+  });
+  const tar = new THREE.MeshStandardMaterial({
+    color: '#202020',
+    roughness: 0.75,
+    transparent: true,
+    opacity: 0.85,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -2,
+    depthWrite: false,
+  });
+  return {
+    steel,
+    rust,
+    grate,
+    plank,
+    wall,
+    inner,
+    door,
+    roof,
+    ac,
+    dark,
+    glass,
+    bulb,
+    acBody,
+    acFan,
+    galv,
+    copper,
+    foam,
+    puddle,
+    tar,
+  };
 }
 
 // ---------------------------------------------------------------- pieces
@@ -340,11 +476,60 @@ function plankBridge(kit, M, a, b) {
   kit.collider(um, ym - 0.02, vm, 0.95, 0.1, len + 0.6, { yaw, pitch, surface: 'wood' });
 }
 
-// a rooftop AC condenser with its collider
+// a flat irregular patch (puddle, tar patch) lying on a surface at height y; r = mean radius (m)
+function blob(kit, mat, u, v, y, r, seed = 1, stretch = 1) {
+  let k = seed * 9301 + 49297;
+  const rnd = () => {
+    k = (k * 9301 + 49297) % 233280;
+    return k / 233280;
+  };
+  const shape = new THREE.Shape();
+  const n = 14;
+  for (let i = 0; i <= n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    const rr = r * (0.7 + rnd() * 0.45);
+    const x = Math.cos(a) * rr * stretch;
+    const z = Math.sin(a) * rr;
+    if (i === 0) shape.moveTo(x, z);
+    else shape.lineTo(x, z);
+  }
+  const g = new THREE.ShapeGeometry(shape, 2);
+  g.rotateX(Math.PI / 2);
+  kit.add(mat, g, u, y + 0.012, v, { yaw: rnd() * Math.PI });
+}
+
+// a rooftop AC condenser: rounded enamel cabinet with louvered sides, a round fan grille on top, rubber feet on a
+// galvanized curb, the refrigerant lines running off into the roof; collider for the cabinet
 function acUnit(kit, M, u, v, y, ry = 0) {
-  kit.box(M.ac, u, y + 0.45, v, 1.1, 0.9, 0.8, { yaw: ry, collide: true, surface: 'metal' });
-  kit.box(M.dark, u, y + 0.92, v, 0.7, 0.04, 0.5, { yaw: ry });
-  kit.box(M.rust, u, y + 0.04, v, 1.3, 0.08, 1.0, { yaw: ry });
+  const body = new RoundedBoxGeometry(1.1, 0.9, 0.8, 3, 0.05);
+  kit.add(M.acBody, body, u, y + 0.53, v, { yaw: ry });
+  kit.collider(u, y + 0.53, v, 1.1, 0.9, 0.8, { yaw: ry, surface: 'metal' });
+  const fan = new THREE.CylinderGeometry(0.31, 0.31, 0.05, 28, 1);
+  kit.add(M.acFan, fan, u, y + 1.0, v, { yaw: ry });
+  const rim = new THREE.TorusGeometry(0.31, 0.022, 6, 28);
+  rim.rotateX(Math.PI / 2);
+  kit.add(M.steel, rim, u, y + 1.02, v, { yaw: ry });
+  const curb = new RoundedBoxGeometry(1.3, 0.08, 1.0, 2, 0.02);
+  kit.add(M.galv, curb, u, y + 0.04, v, { yaw: ry });
+  // the copper lines: out of the side, down, along the roof
+  const side = (lu, lv) => [
+    lu * Math.cos(ry) + lv * Math.sin(ry),
+    -lu * Math.sin(ry) + lv * Math.cos(ry),
+  ];
+  for (const k of [0, 1]) {
+    const pts = [
+      [0.56, 0.35 + k * 0.08, 0.2],
+      [0.7, 0.3 + k * 0.08, 0.2],
+      [0.78, 0.08, 0.2],
+      [1.6, 0.06 + k * 0.04, 0.24],
+    ].map(([a, h, b]) => {
+      const [du, dv] = side(a, b);
+      const w = P(u + du, v + dv);
+      return new THREE.Vector3(w.x, y + h, w.z);
+    });
+    const tube = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 16, 0.012 + k * 0.006, 6);
+    kit.addWorld(k ? M.foam : M.copper, tube);
+  }
 }
 
 // ---------------------------------------------------------------- the escape route
@@ -384,6 +569,33 @@ export function buildEscapeRoute(game) {
   acUnit(kit, M, 52.0, -1.0, roofB, 0);
   plankBridge(kit, M, [47.0, -4.2, roofB], [47.0, -10.4, roofC]);
   acUnit(kit, M, 50.5, -15.0, roofC, 0.1);
+  // the roofs held the afternoon rain: puddles in the low spots, tar patches over old cracks
+  const wet = [
+    [22.5, 1.0, roofA, 1.1],
+    [27.5, -1.6, roofA, 0.7],
+    [31.0, 2.6, roofA, 0.9],
+    [42.0, -1.0, roofB, 1.2],
+    [49.5, 2.8, roofB, 0.6],
+    [46.0, -14.0, roofC, 0.9],
+    [41.5, -16.5, roofC, 0.6],
+  ];
+  wet.forEach(([u, v, y, r], i) => blob(kit, M.puddle, u, v, y, r, i + 3, 1.4));
+  const patches = [
+    [18.5, -1.5, roofA, 0.8],
+    [24.0, 3.2, roofA, 0.6],
+    [53.5, 1.5, roofB, 0.9],
+    [44.5, -17.0, roofC, 0.7],
+  ];
+  patches.forEach(([u, v, y, r], i) => blob(kit, M.tar, u, v, y, r, i + 11, 2.2));
+  // the alleys: puddles on the broken concrete
+  for (const [u, v, r] of [
+    [11.8, 2.5, 0.8],
+    [10.4, -3.6, 0.6],
+    [40.0, -7.2, 0.9],
+    [52.0, -6.8, 0.7],
+  ]) {
+    blob(kit, M.puddle, u, v, g0, r, Math.round(u * 7), 1.6);
+  }
 
   // 3. the stair house filling the alley between No. 5954 and No. 5956 (u 33.4 .. 38.25, v -19.39 .. -9.72)
   const T = { u0: 33.4, u1: 38.25, v0: -19.39, v1: -9.72, top: roofC };
@@ -617,4 +829,165 @@ export function buildCafeAwning(game, store) {
       steel.dispose();
     },
   };
+}
+
+// ---------------------------------------------------------------- props from the model library along the route
+// (public/assets/models/mission, tools/v2/mission/props_cfg.py): roof vent covers, a gas meter with its pipe run on the
+// alley wall, dumpsters in the service alley, a camera over the fire escape. Clones share geometry with the prop cache.
+const DRESSING = [
+  { id: 'roof_vents', at: [24.2, -3.4], y: 9.1, ry: 0.1, box: [1.6, 0.1, 0.5] },
+  { id: 'roof_vents', at: [52.5, -12.6], y: 8.2, ry: Math.PI / 2, box: [1.6, 0.1, 0.5] },
+  { id: 'gas_meter', at: [9.6, -3.2], y: 0.15, ry: Math.PI / 2 },
+  { id: 'dumpster', at: [47.5, -5.55], y: 0.15, ry: Math.PI, box: [3.8, 1.35, 1.5] },
+  { id: 'security_cam', at: [14.1, 5.3], y: 3.2, ry: -Math.PI / 2 },
+];
+
+export async function dressRoute(game) {
+  const { loadMissionProp } = await import('../props.js');
+  const kit = makeKit(game);
+  const group = new THREE.Group();
+  group.name = 'intro2:routeProps';
+  await Promise.all(
+    DRESSING.map(async (d) => {
+      let o = null;
+      try {
+        o = await loadMissionProp(d.id);
+      } catch (e) {
+        console.warn('[robberyBlock] prop', d.id, e);
+        return;
+      }
+      const w = P(d.at[0], d.at[1], d.ry);
+      o.position.set(w.x, d.y, w.z);
+      o.rotation.y = w.heading;
+      o.traverse((m) => {
+        if (m.isMesh) {
+          m.castShadow = true;
+          m.receiveShadow = true;
+        }
+      });
+      group.add(o);
+      if (d.box) {
+        const [bw, bh, bd] = d.box;
+        kit.collider(d.at[0], d.y + bh / 2, d.at[1], bw, bh, bd, { yaw: d.ry, surface: 'metal' });
+      }
+    }),
+  );
+  game.scene.add(group);
+  return {
+    group,
+    dispose() {
+      kit.dispose();
+      game.scene.remove(group);
+    },
+  };
+}
+
+// ---------------------------------------------------------------- dressing the shop and the cafe sidewalk (missions only)
+// Library props into the payday shop (store-local spots from types/payday.js `heist`): the cashier's leather chair,
+// a card terminal at each window, the rates TV and stacks of banded twenties on the back counter, bundles at the
+// stations, the water cooler and a camera in the lobby.
+async function placeAll(game, list, name) {
+  const { loadMissionProp } = await import('../props.js');
+  const group = new THREE.Group();
+  group.name = name;
+  await Promise.all(
+    list.map(async (d) => {
+      let o = null;
+      try {
+        o = d.url ? await loadUrl(d.url) : await loadMissionProp(d.id);
+      } catch (e) {
+        console.warn('[robberyBlock] prop', d.id || d.url, e);
+        return;
+      }
+      o.position.set(d.x, d.y, d.z);
+      o.rotation.y = d.ry || 0;
+      if (d.scale) o.scale.setScalar(d.scale);
+      o.traverse((m) => {
+        if (m.isMesh) {
+          m.castShadow = true;
+          m.receiveShadow = true;
+        }
+      });
+      group.add(o);
+    }),
+  );
+  game.scene.add(group);
+  return group;
+}
+
+const glbCache = new Map();
+async function loadUrl(url) {
+  if (!glbCache.has(url)) {
+    glbCache.set(
+      url,
+      import('three/examples/jsm/loaders/GLTFLoader.js').then(({ GLTFLoader }) =>
+        new GLTFLoader().loadAsync(url).then((g) => g.scene),
+      ),
+    );
+  }
+  return (await glbCache.get(url)).clone(true);
+}
+
+export async function dressShop(game, store) {
+  const h = store?.heist;
+  if (!h) return { dispose() {} };
+  const at = (x, z, y = 0, ry = 0, extra = {}) => {
+    const w = store.toWorld(x, z);
+    return { x: w.x, y: store.baseY + y, z: w.z, ry: store.facing + ry, ...extra };
+  };
+  const R = h.room;
+  const list = [
+    { id: 'office_chair', ...at(h.teller.x + 0.75, h.teller.z - 0.1, 0, 2.6) },
+    { id: 'office_chair', ...at(h.station2.x - 0.3, h.station2.z - 0.55, 0, 3.3) },
+    { id: 'card_reader', ...at(h.tray.x + 0.32, h.tray.z + 0.05, 1.02, 0.2) },
+    { id: 'card_reader', ...at(h.window2.x - 0.32, h.window2.z - 0.4, 1.02, -0.15) },
+    { id: 'tv_flat', ...at(h.backCounter.x + 2.95, h.backCounter.z - 0.08, h.backCounter.y, 0) },
+    {
+      id: 'money_stack_20',
+      ...at(h.backCounter.x + 1.25, h.backCounter.z + 0.02, h.backCounter.y, 0.15),
+    },
+    {
+      id: 'money_stack_20',
+      ...at(h.backCounter.x + 1.6, h.backCounter.z + 0.05, h.backCounter.y, -0.2),
+    },
+    {
+      id: 'cash_pile',
+      ...at(h.backCounter.x + 1.95, h.backCounter.z + 0.04, h.backCounter.y, 0.4, { scale: 0.7 }),
+    },
+    { id: 'cash_100', ...at(h.teller.x - 0.35, h.teller.z + 0.3, 0.9, 0.3) },
+    { id: 'cash_100', ...at(h.station2.x - 0.2, h.station2.z - 0.05, 0.9, -0.4) },
+    { id: 'water_cooler', ...at(R.x1 - 0.25, (R.lz + R.z1) / 2 + 0.6, 0, -Math.PI / 2) },
+    { id: 'security_cam', ...at(R.x1 - 0.12, R.z1 - 0.4, R.ch - 0.35, -Math.PI / 2) },
+  ];
+  const group = await placeAll(game, list, 'intro2:shopProps');
+  return { group, dispose: () => game.scene.remove(group) };
+}
+
+// a bistro set on the cafe's sidewalk either side of the door, under a cafe umbrella (the city's street props)
+export async function dressCafe(game) {
+  const S = '/assets/models/street/';
+  const set = (u, v, k) => {
+    const c = P(u, v);
+    const list = [
+      { url: S + 'patio_table.glb', x: c.x, y: 0.15, z: c.z, ry: FRAME.heading + k },
+      { url: S + 'umbrella_cafe.glb', x: c.x, y: 0.15, z: c.z, ry: FRAME.heading + k },
+    ];
+    for (const a of [0.6, 0.6 + Math.PI]) {
+      const p = P(u + Math.sin(a + k) * 0.75, v + Math.cos(a + k) * 0.75);
+      list.push({
+        url: S + 'chair.glb',
+        x: p.x,
+        y: 0.15,
+        z: p.z,
+        ry: FRAME.heading + a + k + Math.PI,
+      });
+    }
+    return list;
+  };
+  const group = await placeAll(
+    game,
+    [...set(-3.2, 24.2, 0.3), ...set(3.9, 24.3, -0.2)],
+    'intro2:cafeProps',
+  );
+  return { group, dispose: () => game.scene.remove(group) };
 }

@@ -2,8 +2,15 @@
 // the dye pack in the cash goes off: a red/pink cloud, dye on her and on the bag. Two patrol cars pull in, lights on; a
 // female and a male officer take her from behind and cuff her. Then intro2.counselor2 (back in the prison office).
 import { defineMission } from '../runner.js';
-import { buildCafeAwning, findStore, CAFE_LOT, spot, P, FACE } from '../sets/robberyBlock.js';
-import { dyeBurst, stainBag, dyeOnHero, cuffPose, lightsOn } from '../sets/robberyFx.js';
+import { spot, P, FACE } from '../sets/robberyBlock.js';
+import {
+  dyeBurst,
+  stainBag,
+  dyeOnHero,
+  cuffPose,
+  lightsOn,
+  policeGlow,
+} from '../sets/robberyFx.js';
 import {
   CAST3,
   OFFICER_F,
@@ -12,6 +19,7 @@ import {
   arm,
   giveBag,
   stepActor,
+  dressBlock,
 } from './lib/intro2Robbery.js';
 
 // walk a staged actor along points (removed from the list as they are reached); true at the last one
@@ -23,7 +31,12 @@ function followPath(actor, path, speed, dt) {
 
 // Frame: Mari's spot on the cafe sidewalk facing the street (right = east, forward = north, back = the cafe door).
 function arrestCutscene(ctx) {
-  const door = spot('cafeDoor');
+  // 1.6 m out from the cafe door (room behind her for the shot over the officers' shoulders)
+  const door0 = spot('cafeDoor');
+  const door = {
+    x: door0.x + Math.sin(FACE.north) * 1.6,
+    z: door0.z + Math.cos(FACE.north) * 1.6,
+  };
   const at = (r, f) => {
     // frame-local [right, forward] -> world { x, z }
     const h = FACE.north;
@@ -42,6 +55,7 @@ function arrestCutscene(ctx) {
   let stopCuffs = null;
   let restoreDye = null;
   let stopDye = null;
+  const glows = [];
   return {
     id: 'arrest.cafe',
     frame: { x: door.x, z: door.z, heading: FACE.north },
@@ -55,7 +69,10 @@ function arrestCutscene(ctx) {
       copB: { key: 'police1', at: (game) => P(7, 16.4, Math.PI / 2 - 0.2), temp: true },
     },
     setup(cs) {
-      for (const v of Object.values(cs.vehicles)) lightsOn(v);
+      for (const v of Object.values(cs.vehicles)) {
+        lightsOn(v);
+        glows.push(policeGlow(ctx.game, v));
+      }
       // the officers start out of shot by their car
       for (const a of [cs.actors.officerF, cs.actors.officerM]) {
         if (a?.root) a.root.visible = false;
@@ -109,7 +126,17 @@ function arrestCutscene(ctx) {
         aperture: 2.4,
         handheld: 0.3,
       },
-      // 6. pull back wide: the cafe, the dye on the sidewalk, the cars, the lights
+      // 6. from behind: the two officers either side of her, her wrists in the cuffs, the street and the lights ahead
+      {
+        dur: 4.6,
+        mm: 40,
+        from: { pos: [0.3, 1.72, -1.9], look: [0, 1.1, 0.5] },
+        to: { pos: [0.2, 1.68, -1.6] },
+        focus: [0, 1.1, 0.5],
+        aperture: 2.2,
+        handheld: 0.25,
+      },
+      // 7. pull back wide: the cafe, the dye on the sidewalk, the cars, the lights
       {
         dur: 5.0,
         mm: 30,
@@ -191,6 +218,7 @@ function arrestCutscene(ctx) {
         if (i >= 0) ctx.game.updaters.splice(i, 1);
       }
       stopCuffs?.();
+      for (const g of glows) g();
       stopDye?.();
       restoreDye?.();
     },
@@ -209,11 +237,7 @@ export default defineMission({
     await flashbackSetup(ctx, { people: [CAST3.officerF, CAST3.officerM] });
     arm(ctx, false);
     giveBag(ctx);
-    const cafe = findStore(ctx.game, CAFE_LOT);
-    if (cafe) {
-      const aw = buildCafeAwning(ctx.game, cafe);
-      ctx.track(aw, () => aw.dispose());
-    }
+    await dressBlock(ctx, { cafe: true });
   },
   steps: [{ id: 'arrest', cutscene: arrestCutscene }],
   apply(story) {

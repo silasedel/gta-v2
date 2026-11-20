@@ -7,12 +7,21 @@
 import { defineMission } from '../runner.js';
 import { pill } from '../../activities/common.js';
 import { findStore, storePoint, SHOP_LOT, FACE } from '../sets/robberyBlock.js';
-import { makeCashBag, disposeObject, poseBones, BEAR_HUG, HANDS_UP } from '../sets/robberyFx.js';
+import {
+  makeCashBag,
+  disposeObject,
+  poseBones,
+  BEAR_HUG,
+  HANDS_UP,
+  holdInHand,
+} from '../sets/robberyFx.js';
+import { loadMissionProp } from '../props.js';
 import {
   CAST3,
   CASHIER,
   CUSTOMER,
   flashbackSetup,
+  dressBlock,
   arm,
   giveBag,
   alarm,
@@ -104,6 +113,14 @@ function cafeCutscene(ctx) {
       { at: 13.6, who: 'Mari', text: 'They rob people every day over there.', ms: 2400 },
       { at: 16.0, who: 'Mari', text: 'Fair’s fair.', ms: 2000 },
     ],
+    // her cafecito in her right hand while she makes up her mind; she drops it in the bin at the end
+    setup() {
+      if (ctx.data.cup)
+        ctx.data.dropCup = holdInHand(ctx.game, ctx.data.cup, [0.02, -0.07, 0.05], [0, 0, 1.4]);
+    },
+    onEnd() {
+      ctx.data.dropCup?.();
+    },
     end: { player: { at: [0, 0, 1.2, 0] } },
   };
 }
@@ -245,6 +262,12 @@ export default defineMission({
   async setup(ctx) {
     await flashbackSetup(ctx, { people: [CAST3.cashier, CAST3.customer] });
     arm(ctx, false);
+    await dressBlock(ctx, { cafe: true, shop: true });
+    try {
+      ctx.data.cup = await loadMissionProp('coffee_cup');
+    } catch (e) {
+      ctx.data.cup = null;
+    }
   },
   steps: [
     { id: 'cafe', cutscene: cafeCutscene },

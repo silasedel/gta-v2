@@ -4,8 +4,25 @@
 import { playAsMari, loadPeople, CAST2 } from './intro2Prison.js';
 import { house } from './intro.js';
 import { getCinema } from '../../../ui/menu/cinema.js';
-import { spot, P, SHOP_LOT, CAFE_LOT, storeBuilt } from '../../sets/robberyBlock.js';
-import { makeCashBag, carryBag, disposeObject, stainBag, lightsOn } from '../../sets/robberyFx.js';
+import {
+  spot,
+  P,
+  SHOP_LOT,
+  CAFE_LOT,
+  storeBuilt,
+  findStore,
+  dressShop,
+  dressCafe,
+  buildCafeAwning,
+} from '../../sets/robberyBlock.js';
+import {
+  makeCashBag,
+  carryBag,
+  disposeObject,
+  stainBag,
+  lightsOn,
+  policeGlow,
+} from '../../sets/robberyFx.js';
 
 export { loadPeople };
 
@@ -74,6 +91,27 @@ export async function flashbackSetup(ctx, o = {}) {
   await Promise.all([storeBuilt(ctx.game, SHOP_LOT, 15000), storeBuilt(ctx.game, CAFE_LOT, 15000)]);
 }
 
+// The block's mission dressing: the red CAFE awning and the bistro sets (cafe), the library props in the payday shop
+// (shop). Everything goes with the mission's cleanup.
+export async function dressBlock(ctx, o = { cafe: true, shop: false }) {
+  const game = ctx.game;
+  const jobs = [];
+  if (o.cafe) {
+    const cafe = findStore(game, CAFE_LOT);
+    if (cafe) {
+      const aw = buildCafeAwning(game, cafe);
+      ctx.track(aw, () => aw.dispose());
+    }
+    jobs.push(dressCafe(game).then((d) => ctx.track(d, () => d.dispose())));
+  }
+  if (o.shop) {
+    jobs.push(
+      dressShop(game, findStore(game, SHOP_LOT)).then((d) => ctx.track(d, () => d.dispose())),
+    );
+  }
+  await Promise.all(jobs);
+}
+
 // Mari's pistol: in her hand (`draw`) or holstered
 export function arm(ctx, draw) {
   const W = ctx.game.weapons;
@@ -102,7 +140,11 @@ export function giveBag(ctx, stained = false) {
 export async function policeCar(ctx, name, u, v, ry) {
   const at = P(u, v, ry);
   const car = await ctx.spawnVehicle(name, 'police1', at, { keepOnPass: false });
-  if (car) lightsOn(car);
+  if (car) {
+    lightsOn(car);
+    const stop = policeGlow(ctx.game, car);
+    ctx.track(stop, () => stop());
+  }
   return car;
 }
 

@@ -5,15 +5,8 @@
 // The route (fire escape, planks, stair house, rooftop units) is built for this mission only and disposed with it:
 // src/story/sets/robberyBlock.js buildEscapeRoute.
 import { defineMission } from '../runner.js';
-import {
-  buildEscapeRoute,
-  buildCafeAwning,
-  findStore,
-  CAFE_LOT,
-  spot,
-  P,
-} from '../sets/robberyBlock.js';
-import { flashbackSetup, arm, giveBag, alarm, policeCar } from './lib/intro2Robbery.js';
+import { buildEscapeRoute, dressRoute, spot, P } from '../sets/robberyBlock.js';
+import { flashbackSetup, arm, giveBag, alarm, policeCar, dressBlock } from './lib/intro2Robbery.js';
 
 const ROOF_A = 9.1;
 const ROOF_C = 8.2;
@@ -41,11 +34,9 @@ function searchTick(ctx, dt) {
 async function scene(ctx) {
   const route = buildEscapeRoute(ctx.game);
   ctx.track(route, () => route.dispose());
-  const cafe = findStore(ctx.game, CAFE_LOT);
-  if (cafe) {
-    const aw = buildCafeAwning(ctx.game, cafe);
-    ctx.track(aw, () => aw.dispose());
-  }
+  const props = await dressRoute(ctx.game);
+  ctx.track(props, () => props.dispose());
+  await dressBlock(ctx, { cafe: true });
 }
 
 export default defineMission({
